@@ -17,13 +17,12 @@ declare(strict_types=1);
 
 namespace App\Router;
 
+use App\Router\Models\MiddlewareInterface;
+use App\Router\Models\Route;
+use App\Router\Models\RouteConfig;
+use App\Router\Models\RouteLoaderInterface;
+use App\Router\Models\RouteModule;
 use Exception;
-use InvalidArgumentException;
-use MiddlewareInterface;
-use Route;
-use RouteConfig;
-use RouteLoaderInterface;
-use RouteModule;
 
 // ============================================================
 // INTERFACCE E CLASSI BASE
@@ -56,6 +55,8 @@ final class Router {
     // Prevenire clonazione
     private function __clone() {}
 
+    // Base path per fornire il path completo delle url
+    private string $basePath = '';
     // Prevenire unserialize
 
     /**
@@ -99,6 +100,7 @@ final class Router {
 
     /**
      * Configura le route principali
+     * @throws Exception
      */
     public function configure(array $routesConfig): void {
         foreach ($routesConfig as $config) {
@@ -254,6 +256,7 @@ final class Router {
     // GENERAZIONE URL (NAMED ROUTES)
     // ============================================================
 
+
     /**
      * Genera URL per una route con nome
      * @throws Exception
@@ -265,6 +268,14 @@ final class Router {
 
         $route = $this->namedRoutes[$name];
         $url = $this->replaceRouteParameters($route->path, $params);
+
+        // ============================================
+        // AGGIUNGI IL BASE PATH SE CONFIGURATO
+        // ============================================
+        if ($this->basePath && $this->basePath !== '/') {
+            $url = rtrim($this->basePath, '/') . $url;
+        }
+        // ============================================
 
         if (!empty($query)) {
             $url .= '?' . http_build_query($query);
@@ -281,7 +292,10 @@ final class Router {
         $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 
-        return $protocol . '://' . $host . $this->url($name, $params, $query);
+        // Usa url() che ora include il base path
+        $path = $this->url($name, $params, $query);
+
+        return $protocol . '://' . $host . $path;
     }
 
     /**
@@ -319,6 +333,15 @@ final class Router {
     public function dispatch(?string $requestUri = null, ?string $requestMethod = null): void {
         $requestUri = $requestUri ?? parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/';
         $requestMethod = $requestMethod ?? $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+        // Rimuovi il base path dall'URI della richiesta
+        if ($this->basePath && str_starts_with($requestUri, $this->basePath)) {
+            $requestUri = substr($requestUri, strlen($this->basePath));
+        }
+
+        if ($requestUri === '') {
+            $requestUri = '/';
+        }
 
         foreach ($this->routes as $route) {
             // Controlla metodo HTTP
@@ -395,17 +418,19 @@ final class Router {
         return $this->middlewareInstances[$middlewareClass];
     }
 
+
     /**
      * Esegue il callback della route
      * @throws Exception
      */
-    private function executeCallback(Route $route, array $params): void {
+    private function executeCallback(Route $route, array $params): void
+    {
         $callback = $route->callback;
 
         if (is_callable($callback)) {
             call_user_func_array($callback, array_merge(array_values($params), [$route->data]));
         } elseif (is_string($callback) && strpos($callback, '@') !== false) {
-            // Controller@method syntax
+            // Controller@method syntax (opzionale, per retrocompatibilità)
             [$controllerClass, $method] = explode('@', $callback, 2);
 
             if (!class_exists($controllerClass)) {
@@ -418,20 +443,21 @@ final class Router {
             }
 
             call_user_func_array([$controller, $method], array_merge(array_values($params), [$route->data]));
-        } else {
+        }  else {
             throw new Exception("Callback non valido per la route");
         }
     }
 
     /**
      * Gestisce 404 Not Found
+     * @throws Exception
      */
     private function handleNotFound(): void {
         http_response_code(404);
 
         // Cerca una route con nome '404' o wildcard
         foreach ($this->routes as $route) {
-            if ($route->name === '404' || strpos($route->path, '*') !== false) {
+            if ($route->name === '404' || str_contains($route->path, '*')) {
                 $this->executeCallback($route, []);
                 return;
             }
@@ -465,7 +491,10 @@ final class Router {
     // ============================================================
     // UTILITIES E GETTERS
     // ============================================================
-
+    public function setBasePath(string $basePath): self {
+        $this->basePath = rtrim($basePath, '/');
+        return $this;
+    }
     /**
      * Ottiene la route corrente
      */

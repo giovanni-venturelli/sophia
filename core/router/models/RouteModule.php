@@ -1,5 +1,5 @@
 <?php
-
+namespace App\Router\Models;
 /**
  * Modulo di route (come in Angular)
  */

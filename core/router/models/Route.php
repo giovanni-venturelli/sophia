@@ -1,9 +1,10 @@
 <?php
-
+namespace App\Router\Models;
 /**
  * Rappresentazione di una route finale (dopo elaborazione)
  */
-final class Route {
+final class Route
+{
     public string $method;
     public string $path;
     public $callback;
@@ -12,7 +13,8 @@ final class Route {
     public array $data;
     public string $pattern;
 
-    public function __construct(array $config) {
+    public function __construct(array $config)
+    {
         $this->method = $config['method'];
         $this->path = $config['path'];
         $this->callback = $config['callback'];
@@ -22,7 +24,8 @@ final class Route {
         $this->pattern = $this->compilePattern();
     }
 
-    private function compilePattern(): string {
+    private function compilePattern(): string
+    {
         // Sostituisce :param con regex
         $pattern = preg_replace('/:([a-zA-Z0-9_]+)/', '(?P<$1>[a-zA-Z0-9_-]+)', $this->path);
         // Sostituisce * con regex per wildcard
@@ -30,7 +33,8 @@ final class Route {
         return '#^' . $pattern . '$#';
     }
 
-    public function matches(string $path): ?array {
+    public function matches(string $path): ?array
+    {
         if (preg_match($this->pattern, $path, $matches)) {
             // Filtra solo i named parameters
             $params = [];

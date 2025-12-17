@@ -1,5 +1,6 @@
 <?php
-
+namespace App\Router\Models;
+use InvalidArgumentException;
 /**
  * DTO per rappresentare una route configurata
  */
