@@ -10,7 +10,7 @@ if (isset($_SERVER['REQUEST_URI'])) {
     $uri = $_SERVER['REQUEST_URI'];
 
     // Rimuovi il base path se presente
-    if (strpos($uri, $basePath) === 0) {
+    if (str_starts_with($uri, $basePath)) {
         $uri = substr($uri, strlen($basePath));
     }
 
@@ -30,7 +30,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 use App\Router\Router;
 
 $router = Router::getInstance();
-$router->setBasePath($basePath);
+//$router->setBasePath($basePath);
 
 require_once __DIR__ . '/routes.php';
 

@@ -1,16 +1,15 @@
 <?php
+namespace App\Component;
+
+use Attribute;
 
 #[Attribute(Attribute::TARGET_CLASS)]
-class Component
+readonly class Component
 {
-    public readonly string $template;
-    public readonly array $styles;
-
     public function __construct(
-        string $template,
-        array $styles = []
-    ) {
-        $this->template = $template;
-        $this->styles = $styles;
-    }
+        public string  $selector,
+        public ?string $template = null,
+        public array   $styles = [],
+        public array   $meta = []
+    ) {}
 }

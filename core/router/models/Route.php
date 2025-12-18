@@ -37,13 +37,9 @@ final class Route
     {
         if (preg_match($this->pattern, $path, $matches)) {
             // Filtra solo i named parameters
-            $params = [];
-            foreach ($matches as $key => $value) {
-                if (!is_numeric($key)) {
-                    $params[$key] = $value;
-                }
-            }
-            return $params;
+            return array_filter($matches, function ($key) {
+                return !is_numeric($key);
+            }, ARRAY_FILTER_USE_KEY);
         }
         return null;
     }
