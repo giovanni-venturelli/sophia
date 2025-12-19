@@ -1,336 +1,330 @@
 <?php
-/**
- * Router PHP Avanzato con sintassi Angular-like + Component SSR
- */
-
-declare(strict_types=1);
 
 namespace App\Router;
 
-use App\Component\Component;
 use App\Component\ComponentRegistry;
 use App\Component\Renderer;
-use App\Router\Models\MiddlewareInterface;
-use App\Router\Models\Route;
-use App\Router\Models\RouteConfig;
-use App\Router\Models\RouteLoaderInterface;
-use App\Router\Models\RouteModule;
 
-use ReflectionClass;
-use Exception;
-
-final class Router
+class Router
 {
-    private static ?self $instance = null;
+    private static ?Router $instance = null;
 
+    /** @var array */
     private array $routes = [];
-    private array $namedRoutes = [];
-    private array $middlewareInstances = [];
-    private array $registeredModules = [];
-    private array $globalMiddleware = [];
 
-    private ?Route $currentRoute = null;
+    /** @var array|null */
+    private ?array $currentRoute = null;
+
+    /** Parametri estratti dalla route corrente (es. id, slug, ecc.) */
     private array $currentParams = [];
 
+    /** Dati extra definiti nella route corrente (chiave 'data') */
+    private array $currentRouteData = [];
+
+    /**
+     * Base path dell'applicazione, es. "/test-route".
+     * Verrà tolto dall'URI in ingresso e prefissato agli URL generati.
+     */
     private string $basePath = '';
 
-    private ?ComponentRegistry $componentRegistry = null;
+    /** @var Renderer|null */
     private ?Renderer $renderer = null;
 
-    private function __construct() {}
-    private function __clone() {}
+    /** @var ComponentRegistry|null */
+    private ?ComponentRegistry $componentRegistry = null;
 
-    public function __wakeup()
+    private function __construct()
     {
-        throw new Exception("Cannot unserialize singleton");
     }
 
-    public static function getInstance(): self
+    public static function getInstance(): Router
     {
-        return self::$instance ??= new self();
+        if (!self::$instance) {
+            self::$instance = new Router();
+        }
+
+        return self::$instance;
     }
 
-    /* ==========================================================
-     * MODULES & MIDDLEWARE
-     * ========================================================== */
-
-    public function registerModule(RouteModule $module): self
+    public function setBasePath(string $basePath): void
     {
-        $this->registeredModules[$module->getName()] = $module;
-        return $this;
-    }
+        $basePath = trim($basePath);
 
-    public function useGlobalMiddleware(string $middlewareClass): self
-    {
-        if (!in_array($middlewareClass, $this->globalMiddleware, true)) {
-            $this->globalMiddleware[] = $middlewareClass;
-        }
-        return $this;
-    }
-
-    public function configure(array $routesConfig): void
-    {
-        foreach ($routesConfig as $config) {
-            $this->processRouteConfig(new RouteConfig($config));
-        }
-    }
-
-    /* ==========================================================
-     * ROUTE PROCESSING (RECURSIVE)
-     * ========================================================== */
-
-    /**
-     * @throws Exception
-     */
-    private function processRouteConfig(
-        RouteConfig $config,
-        string $parentPath = '',
-        array $parentMiddleware = [],
-        array $parentData = []
-    ): void {
-        $currentPath = rtrim($parentPath . $config->path, '/');
-        $currentMiddleware = array_merge($parentMiddleware, $config->middleware);
-        $currentData = array_merge($parentData, $config->data);
-
-        // Processa imports se presenti
-        foreach ($config->imports as $moduleName) {
-            $this->importModule($moduleName, $currentPath, $currentMiddleware, $currentData);
-        }
-
-        // Processa loadChildren se presente
-        if ($config->loadChildren !== null) {
-            $this->loadChildren($config->loadChildren, $currentPath, $currentMiddleware, $currentData);
-        }
-
-        // Registra questa route come route finale se ha component, callback o redirectTo
-        // Anche se ha children, può essere una route valida (es. /user può avere un componente)
-        if ($config->component !== null || $config->callback !== null || $config->redirectTo !== null) {
-            $this->registerFinalRoute($config, $currentPath ?: '/', $currentMiddleware, $currentData);
-        }
-
-        // Processa children ricorsivamente
-        foreach ($config->children as $childConfig) {
-            $this->processRouteConfig(
-                new RouteConfig($childConfig),
-                $currentPath,
-                $currentMiddleware,
-                $currentData
-            );
-        }
-    }
-
-    /**
-     * @throws Exception
-     */
-    private function importModule(
-        string $moduleName,
-        string $parentPath,
-        array $parentMiddleware,
-        array $parentData
-    ): void {
-        if (!isset($this->registeredModules[$moduleName])) {
-            throw new Exception("Modulo '$moduleName' non registrato");
-        }
-
-        $module = $this->registeredModules[$moduleName];
-
-        foreach ($module->getRoutes() as $routeConfig) {
-            $this->processRouteConfig(
-                new RouteConfig($routeConfig),
-                $parentPath . $module->getPrefix(),
-                array_merge($parentMiddleware, $module->getMiddleware()),
-                $parentData
-            );
-        }
-    }
-
-    /**
-     * @throws Exception
-     */
-    private function loadChildren(
-        $loader,
-        string $parentPath,
-        array $parentMiddleware,
-        array $parentData
-    ): void {
-        if ($loader instanceof RouteLoaderInterface) {
-            $routes = $loader->load();
-        } elseif (is_callable($loader)) {
-            $routes = $loader();
-        } elseif (is_string($loader) && file_exists($loader)) {
-            $routes = require $loader;
-        } else {
-            throw new Exception("loadChildren non valido");
-        }
-
-        foreach ($routes as $routeConfig) {
-            $this->processRouteConfig(
-                new RouteConfig($routeConfig),
-                $parentPath,
-                $parentMiddleware,
-                $parentData
-            );
-        }
-    }
-
-    /* ==========================================================
-     * FINAL ROUTE REGISTRATION
-     * ========================================================== */
-
-    private function registerFinalRoute(
-        RouteConfig $config,
-        string $fullPath,
-        array $middleware,
-        array $data
-    ): void {
-        if ($config->component !== null) {
-            $callback = $this->createComponentCallback($config->component);
-        } elseif ($config->redirectTo !== null) {
-            $callback = function () use ($config) {
-                header("Location: {$config->redirectTo}");
-                exit;
-            };
-        } else {
-            $callback = $config->callback;
-        }
-
-        $route = new Route([
-            'method'     => $config->method,
-            'path'       => $fullPath,
-            'callback'   => $callback,
-            'middleware' => $middleware,
-            'name'       => $config->name,
-            'data'       => array_merge($data, $config->data),
-        ]);
-
-        $this->routes[] = $route;
-
-        if ($config->name !== null) {
-            $this->namedRoutes[$config->name] = $route;
-        }
-    }
-
-    /* ==========================================================
-     * COMPONENT CALLBACK
-     * ========================================================== */
-
-    private function createComponentCallback(string $componentClass): callable
-    {
-        return function () use ($componentClass) {
-            if ($this->componentRegistry === null) {
-                $this->componentRegistry = new ComponentRegistry();
-                $this->renderer = new Renderer($this->componentRegistry);
-            }
-
-            // Ottieni il selettore dalla classe del componente
-            $ref = new ReflectionClass($componentClass);
-            $attr = $ref->getAttributes(Component::class)[0] ?? null;
-
-            if (!$attr) {
-                throw new \RuntimeException("Class $componentClass is not a Component");
-            }
-
-            $componentAttr = $attr->newInstance();
-            $selector = $componentAttr->selector;
-
-            // Assicurati che il componente sia registrato
-            if (!$this->componentRegistry->get($selector)) {
-                $this->componentRegistry->register($componentClass);
-            }
-
-            echo $this->renderer->renderRoot($selector);
-        };
-    }
-
-    /* ==========================================================
-     * DISPATCH
-     * ========================================================== */
-
-    public function dispatch(?string $uri = null, ?string $method = null): void
-    {
-        $uri = $uri ?? parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/';
-        $method = $method ?? $_SERVER['REQUEST_METHOD'] ?? 'GET';
-
-        foreach ($this->routes as $route) {
-            if ($route->method !== 'ANY' && $route->method !== $method) {
-                continue;
-            }
-
-            $params = $route->matches($uri);
-            if ($params === null) {
-                continue;
-            }
-
-            $this->currentRoute = $route;
-            $this->currentParams = $params;
-
-            if (!$this->runMiddleware($route)) {
-                return;
-            }
-
-            $this->executeCallback($route, $params);
+        if ($basePath === '' || $basePath === '/') {
+            $this->basePath = '';
             return;
         }
 
+        if ($basePath[0] !== '/') {
+            $basePath = '/' . $basePath;
+        }
+
+        if (strlen($basePath) > 1) {
+            $basePath = rtrim($basePath, '/');
+        }
+
+        $this->basePath = $basePath;
+    }
+
+    public function getBasePath(): string
+    {
+        return $this->basePath;
+    }
+
+    public function setRenderer(Renderer $renderer): void
+    {
+        $this->renderer = $renderer;
+    }
+
+    public function setComponentRegistry(ComponentRegistry $registry): void
+    {
+        $this->componentRegistry = $registry;
+    }
+
+    /**
+     * Configura le routes con sintassi Angular-like.
+     *
+     * Esempio:
+     * [
+     *   ['path' => 'home', 'component' => HomeComponent::class, 'name' => 'home'],
+     * ]
+     */
+    public function configure(array $routes): void
+    {
+        $this->routes = $routes;
+    }
+
+    /**
+     * Gestisce la richiesta corrente: match della route + esecuzione.
+     */
+    public function dispatch(): void
+    {
+        $uri = $this->getCurrentPath();
+        $match = $this->matchRoute($uri);
+
+        if (!$match) {
+            $this->handleNotFound();
+            return;
+        }
+
+        [$route, $params] = $match;
+
+        $this->currentRoute      = $route;
+        $this->currentParams     = $params;
+        $this->currentRouteData  = $route['data'] ?? [];
+
+        // Redirect
+        if (isset($route['redirectTo'])) {
+            $target = $this->normalizePath($route['redirectTo']);
+            $url    = $this->basePath . '/' . $target;
+            header('Location: ' . $url);
+            exit;
+        }
+
+        // Callback (API ecc.)
+        if (isset($route['callback']) && is_callable($route['callback'])) {
+            \call_user_func($route['callback'], $params, $route);
+            return;
+        }
+
+        // Component
+        if (isset($route['component'])) {
+            $componentClass = $route['component'];
+
+            if (!class_exists($componentClass)) {
+                http_response_code(500);
+                echo "Component class '{$componentClass}' not found";
+                return;
+            }
+
+            if (!$this->renderer || !$this->componentRegistry) {
+                http_response_code(500);
+                echo "Renderer or ComponentRegistry not configured in Router";
+                return;
+            }
+
+            /**
+             * ASSUNZIONE:
+             * - per ogni route con 'component' hai registrato un selector nel ComponentRegistry.
+             * - per la Home: selector 'app-home' → HomeComponent::class.
+             */
+            $selector = $this->resolveSelectorFromRoute($route, $componentClass);
+
+            // Dati da passare al root component: params + data
+            $data = array_merge($this->currentParams, [
+                'routeData' => $this->currentRouteData,
+            ]);
+
+            echo $this->renderer->renderRoot($selector, $data);
+            return;
+        }
+
+        // Nessun handler valido
         $this->handleNotFound();
     }
 
-    private function runMiddleware(Route $route): bool
+    /**
+     * Per semplicità: mappa component class → selector.
+     * In un sistema più avanzato potresti tenere questa mappa altrove.
+     */
+    private function resolveSelectorFromRoute(array $route, string $componentClass): string
     {
-        foreach (array_merge($this->globalMiddleware, $route->middleware) as $mw) {
-            $instance = $this->getMiddlewareInstance($mw);
-            if ($instance->handle() === false) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private function getMiddlewareInstance(string $class): MiddlewareInterface
-    {
-        return $this->middlewareInstances[$class]
-            ??= new $class();
-    }
-
-    private function executeCallback(Route $route, array $params): void
-    {
-        call_user_func_array($route->callback, array_values($params));
-    }
-
-    private function handleNotFound(): void
-    {
-        // Cerca una route 404 personalizzata
-        foreach ($this->routes as $route) {
-            if ($route->path === '*') {
-                $this->executeCallback($route, []);
-                return;
-            }
+        // Se nella route hai messo un 'selector', usalo
+        if (!empty($route['selector']) && is_string($route['selector'])) {
+            return $route['selector'];
         }
 
-        // Fallback a 404 di default
-        http_response_code(404);
-        echo "404 - Route not found";
+        // Fallback semplice: nome in base al class basename
+        // Es: App\Pages\Home\HomeComponent -> app-home
+        $short = strtolower(preg_replace('/Component$/', '', basename(str_replace('\\', '/', $componentClass))));
+        return 'app-' . $short;
     }
-
-    /* ==========================================================
-     * UTILITY METHODS
-     * ========================================================== */
 
     /**
-     * @throws Exception
+     * Restituisce solo il path della richiesta, senza query string,
+     * senza basePath, e senza slash iniziale (es. "home", "blog/php/router").
      */
-    public function url(string $name, array $params = []): string
+    private function getCurrentPath(): string
     {
-        if (!isset($this->namedRoutes[$name])) {
-            throw new Exception("Route named '$name' not found");
+        $uri  = $_SERVER['REQUEST_URI'] ?? '/';
+        $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+
+        // Rimuovi il basePath dall'inizio, se presente
+        if ($this->basePath && str_starts_with($path, $this->basePath)) {
+            $path = substr($path, strlen($this->basePath));
+            if ($path === '') {
+                $path = '/';
+            }
         }
 
-        return $this->namedRoutes[$name]->generateUrl($params);
+        // Normalizza stile Angular: niente slash iniziale
+        $path = ltrim($path, '/'); // "/" -> "", "/home" -> "home"
+
+        return $path;
     }
 
-    public function getCurrentRoute(): ?Route
+    /**
+     * Trova la prima route che matcha il path richiesto.
+     *
+     * @return array{0:array,1:array}|null
+     */
+    private function matchRoute(string $path): ?array
     {
-        return $this->currentRoute;
+        foreach ($this->routes as $route) {
+            $match = $this->matchSingleRoute($route, $path);
+            if ($match) {
+                return $match;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Match di una singola route (con eventuali children).
+     *
+     * @return array{0:array,1:array}|null
+     */
+    private function matchSingleRoute(array $route, string $path): ?array
+    {
+        $routePath = $route['path'] ?? '';
+
+        // Catch-all tipo 404: path == '' o '*'
+        if ($routePath === '*' || $routePath === '') {
+            return [$route, []];
+        }
+
+        // Se ha children, prima prova a matchare il padre e poi i figli
+        if (!empty($route['children']) && is_array($route['children'])) {
+            $parentPath = $this->normalizePath($routePath);
+
+            if ($path === $parentPath || str_starts_with($path, $parentPath . '/')) {
+                $rest = trim(substr($path, strlen($parentPath)), '/'); // "" oppure "users", ecc.
+
+                foreach ($route['children'] as $child) {
+                    $childPath     = $this->normalizePath($child['path'] ?? '');
+                    $fullChildPath = $parentPath;
+
+                    if ($childPath !== '') {
+                        $fullChildPath .= '/' . $childPath;
+                    }
+
+                    $match = $this->matchPathWithParams($fullChildPath, $path);
+                    if ($match) {
+                        [$params] = $match;
+
+                        $mergedRoute = array_merge($route, $child);
+                        unset($mergedRoute['children']);
+
+                        return [$mergedRoute, $params];
+                    }
+                }
+            }
+        }
+
+        // Route "semplice"
+        $routePath = $this->normalizePath($routePath);
+        $match     = $this->matchPathWithParams($routePath, $path);
+
+        if ($match) {
+            [$params] = $match;
+            return [$route, $params];
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalizza un path route (no slash iniziale/finale).
+     */
+    private function normalizePath(string $path): string
+    {
+        $path = trim($path);
+        $path = trim($path, '/');
+
+        return $path;
+    }
+
+    /**
+     * Match path con parametri stile Angular.
+     *
+     * @return array{0:array}|null
+     */
+    private function matchPathWithParams(string $routePath, string $requestPath): ?array
+    {
+        $routeSegments   = $routePath === '' ? [] : explode('/', $routePath);
+        $requestSegments = $requestPath === '' ? [] : explode('/', $requestPath);
+
+        if (count($routeSegments) !== count($requestSegments)) {
+            return null;
+        }
+
+        $params = [];
+
+        foreach ($routeSegments as $index => $segment) {
+            $value = $requestSegments[$index];
+
+            if (str_starts_with($segment, ':')) {
+                $paramName          = substr($segment, 1);
+                $params[$paramName] = $value;
+                continue;
+            }
+
+            if ($segment !== $value) {
+                return null;
+            }
+        }
+
+        return [$params];
+    }
+
+    public function getCurrentRouteData(?string $key = null): mixed
+    {
+        if ($key === null) {
+            return $this->currentRouteData;
+        }
+
+        return $this->currentRouteData[$key] ?? null;
     }
 
     public function getCurrentParams(): array
@@ -338,9 +332,67 @@ final class Router
         return $this->currentParams;
     }
 
-    public function setBasePath(string $basePath): self
+    /**
+     * Genera l'URL di una route a partire dal suo name e dai params.
+     * Ritorna un path relativo CON slash iniziale, SENZA basePath.
+     */
+    public function url(string $name, array $params = []): string
     {
-        $this->basePath = rtrim($basePath, '/');
-        return $this;
+        $route = $this->findRouteByName($name);
+
+        if (!$route) {
+            return '';
+        }
+
+        $path = $this->normalizePath($route['path'] ?? '');
+
+        if ($path !== '') {
+            $segments = explode('/', $path);
+
+            foreach ($segments as $i => $segment) {
+                if (str_starts_with($segment, ':')) {
+                    $paramName = substr($segment, 1);
+
+                    if (!array_key_exists($paramName, $params)) {
+                        throw new \InvalidArgumentException(
+                            "Missing parameter '{$paramName}' for route '{$name}'"
+                        );
+                    }
+
+                    $segments[$i] = $params[$paramName];
+                }
+            }
+
+            $path = implode('/', $segments);
+        }
+
+        $path = '/' . ltrim($path, '/');
+
+        return $path;
+    }
+
+    private function findRouteByName(string $name): ?array
+    {
+        foreach ($this->routes as $route) {
+            if (($route['name'] ?? null) === $name) {
+                return $route;
+            }
+
+            if (!empty($route['children']) && is_array($route['children'])) {
+                foreach ($route['children'] as $child) {
+                    if (($child['name'] ?? null) === $name) {
+                        return array_merge($route, $child);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function handleNotFound(): void
+    {
+        http_response_code(404);
+        echo '404 - Page not found';
     }
 }

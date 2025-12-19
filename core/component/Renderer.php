@@ -1,482 +1,268 @@
 <?php
 namespace App\Component;
 
-readonly class Renderer
-{
-    public function __construct(
-        private ComponentRegistry $registry
-    ) {}
+use Twig\Environment;
+use Twig\Loader\FilesystemLoader;
+use Twig\TwigFunction;
+use ReflectionObject;
 
-    public function renderRoot(string $selector): string
+class Renderer
+{
+    private Environment $twig;
+    private ComponentRegistry $registry;
+
+    public function __construct(
+        ComponentRegistry $registry,
+        string $templatesPath = __DIR__ . '/../../pages',
+        string $cachePath = __DIR__ . '/../../cache/twig',
+        bool $debug = true
+    ) {
+        $this->registry = $registry;
+
+        // Configura il loader per cercare i template in più directory
+        $loader = new FilesystemLoader($templatesPath);
+
+        $this->twig = new Environment($loader, [
+            'cache' => $cachePath,
+            'auto_reload' => true,
+            'debug' => $debug,
+            'strict_variables' => true,
+        ]);
+
+        // Aggiungi funzioni custom per supportare i componenti
+        $this->registerCustomFunctions();
+    }
+
+    /**
+     * Registra funzioni Twig custom per gestire i componenti
+     */
+    private function registerCustomFunctions(): void
+    {
+        // Funzione per renderizzare un componente
+        // Uso: {{ component('app-user-card', {name: 'Mario'}) }}
+        $this->twig->addFunction(new TwigFunction(
+            'component',
+            [$this, 'renderComponent'],
+            ['is_safe' => ['html']]
+        ));
+
+        // Funzione per ottenere dati di route
+        // Uso: {{ route_data('title') }}
+        $this->twig->addFunction(new TwigFunction(
+            'route_data',
+            [$this, 'getRouteData']
+        ));
+
+        // Funzione per generare URL
+        // Uso: {{ url('home', {id: 123}) }}
+        $this->twig->addFunction(new TwigFunction(
+            'url',
+            [$this, 'generateUrl']
+        ));
+    }
+
+    /**
+     * Renderizza un componente root
+     *
+     * @param string $selector Selector del componente
+     * @param array $data Dati da passare al componente (route params, etc.)
+     * @return string HTML renderizzato
+     */
+    public function renderRoot(string $selector, array $data = []): string
     {
         $entry = $this->registry->get($selector);
 
         if (!$entry) {
-            throw new \RuntimeException("Component $selector not found");
+            throw new \RuntimeException("Component '$selector' not found");
         }
 
+        // Crea un'istanza del componente
         $instance = new ($entry['class'])();
 
-        return $this->renderInstance(
-            $instance,
-            $entry['config']
-        );
+        // Passa i dati al componente (per route params, query string, etc.)
+        $this->injectData($instance, $data);
+
+        return $this->renderInstance($instance, $entry['config']);
     }
 
-    private function interpolate(string $tpl, object $component): string
+    /**
+     * Renderizza un'istanza di componente
+     *
+     * @param object $component Istanza del componente
+     * @param Component $config Configurazione del componente
+     * @return string HTML renderizzato
+     */
+    private function renderInstance(object $component, Component $config): string
     {
-        return preg_replace_callback(
-            '/{{\s*(\w+(?:\.\w+)*)\s*}}/',
-            function($m) use ($component) {
-                $value = $this->resolveProperty($m[1], $component);
-                return htmlspecialchars($value ?? '');
-            },
-            $tpl
-        );
-    }
-
-    private function resolveProperty(string $path, mixed $context): mixed
-    {
-        $parts = explode('.', $path);
-        $value = $context;
-
-        foreach ($parts as $part) {
-            if (is_object($value)) {
-                try {
-                    $value = $value->$part;
-                } catch (\Throwable $e) {
-                    return null;
-                }
-            } elseif (is_array($value)) {
-                $value = $value[$part] ?? null;
-            } else {
-                return null;
-            }
-
-            if ($value === null) {
-                return null;
-            }
+        if (!$config->template) {
+            throw new \RuntimeException("Component '{$config->selector}' has no template");
         }
 
-        return $value;
+        // Estrai tutti i dati pubblici dal componente
+        $templateData = $this->extractComponentData($component);
+
+        // Aggiungi metadati utili
+        $templateData['_component'] = [
+            'selector' => $config->selector,
+            'meta' => $config->meta
+        ];
+
+        // Renderizza con Twig
+        return $this->twig->render($config->template, $templateData);
     }
 
-    private function processIfDirective(string $tpl, object $component): string
+    /**
+     * Renderizza un componente child (chiamato da template Twig)
+     *
+     * @param string $selector Selector del componente
+     * @param array $bindings Dati da passare al componente
+     * @return string HTML renderizzato
+     */
+    public function renderComponent(string $selector, array $bindings = []): string
     {
-        $pattern = '/@if\s*\(\s*([^)]+)\s*\)\s*\{(.*?)\}(?:\s*@else\s*\{(.*?)\})?/s';
+        $entry = $this->registry->get($selector);
 
-        return preg_replace_callback(
-            $pattern,
-            function ($m) use ($component) {
-                $condition = trim($m[1]);
-                $ifContent = $m[2];
-                $elseContent = $m[3] ?? '';
-
-                $result = $this->evaluateCondition($condition, $component);
-
-                return $result ? $ifContent : $elseContent;
-            },
-            $tpl
-        );
-    }
-
-    private function evaluateCondition(string $condition, object $component): bool
-    {
-        $condition = trim($condition);
-
-        if (preg_match('/^(.+?)\s*(===|!==|==|!=|>|<|>=|<=)\s*(.+)$/', $condition, $matches)) {
-            $left = $this->evaluateExpression(trim($matches[1]), $component);
-            $operator = $matches[2];
-            $right = $this->evaluateExpression(trim($matches[3]), $component);
-
-            return match($operator) {
-                '===' => $left === $right,
-                '!==' => $left !== $right,
-                '==' => $left == $right,
-                '!=' => $left != $right,
-                '>' => $left > $right,
-                '<' => $left < $right,
-                '>=' => $left >= $right,
-                '<=' => $left <= $right,
-                default => false
-            };
+        if (!$entry) {
+            return "<!-- Component '$selector' not found -->";
         }
 
-        if (str_starts_with($condition, '!')) {
-            $value = $this->evaluateExpression(substr($condition, 1), $component);
-            return !$value;
-        }
+        // Crea istanza del componente
+        $instance = new ($entry['class'])();
 
-        $value = $this->evaluateExpression($condition, $component);
-        return (bool) $value;
+        // Applica i bindings alle proprietà @Input del componente
+        $this->applyInputBindings($instance, $bindings);
+
+        return $this->renderInstance($instance, $entry['config']);
     }
 
-    private function evaluateExpression(string $expr, object $component): mixed
+    /**
+     * Applica i binding alle proprietà @Input del componente
+     *
+     * @param object $component Istanza del componente
+     * @param array $bindings Array associativo nome => valore
+     */
+    private function applyInputBindings(object $component, array $bindings): void
     {
-        $expr = trim($expr);
-
-        if ($expr === 'true') return true;
-        if ($expr === 'false') return false;
-        if ($expr === 'null') return null;
-        if (is_numeric($expr)) return $expr + 0;
-        if (preg_match('/^["\'](.+)["\']$/', $expr, $m)) return $m[1];
-
-        return $this->resolveProperty($expr, $component);
-    }
-
-    private function processForDirective(string $tpl, object $component): string
-    {
-        while (preg_match('/@for\s*\(\s*(\w+)\s+of\s+(\w+(?:\.\w+)*)\s*;\s*track\s+([^)]+)\)\s*\{/s', $tpl, $match, PREG_OFFSET_CAPTURE)) {
-            $itemVar = $match[1][0];
-            $arrayPath = $match[2][0];
-            $trackBy = trim($match[3][0]);
-            $startPos = $match[0][1];
-            $openBracePos = $startPos + strlen($match[0][0]);
-
-            $braceCount = 1;
-            $pos = $openBracePos;
-            $contentStart = $openBracePos;
-
-            while ($pos < strlen($tpl) && $braceCount > 0) {
-                if ($tpl[$pos] === '{') {
-                    $braceCount++;
-                } elseif ($tpl[$pos] === '}') {
-                    $braceCount--;
-                }
-                $pos++;
-            }
-
-            if ($braceCount !== 0) {
-                throw new \RuntimeException("Unmatched braces in @for directive");
-            }
-
-            $contentEnd = $pos - 1;
-            $content = substr($tpl, $contentStart, $contentEnd - $contentStart);
-
-            $emptyContent = '';
-            $afterFor = $pos;
-            if (preg_match('/^\s*@empty\s*\{/', substr($tpl, $pos), $emptyMatch)) {
-                $emptyStart = $pos + strlen($emptyMatch[0]);
-                $braceCount = 1;
-                $pos = $emptyStart;
-
-                while ($pos < strlen($tpl) && $braceCount > 0) {
-                    if ($tpl[$pos] === '{') {
-                        $braceCount++;
-                    } elseif ($tpl[$pos] === '}') {
-                        $braceCount--;
-                    }
-                    $pos++;
-                }
-
-                $emptyContent = substr($tpl, $emptyStart, $pos - $emptyStart - 1);
-                $afterFor = $pos;
-            }
-
-            $array = $this->resolveProperty($arrayPath, $component);
-
-            $replacement = '';
-            if (!is_array($array) || empty($array)) {
-                $replacement = $emptyContent;
-            } else {
-                foreach ($array as $index => $item) {
-                    $itemObject = is_array($item) ? (object)$item : $item;
-
-                    // Pre-calcola le proprietà temporanee dall'item
-                    $tempProps = [];
-                    if (is_object($itemObject)) {
-                        foreach (get_object_vars($itemObject) as $key => $value) {
-                            $tempName = '__temp_' . $itemVar . '_' . $key;
-                            $tempProps[$tempName] = $value;
-                        }
-                    }
-
-                    // Crea il contesto del loop con accesso alle proprietà temporanee
-                    $loopContext = new class($component, $itemObject, $index, count($array), $tempProps) {
-                        public function __construct(
-                            private object $parent,
-                            private object|int|string $itemData,
-                            public int $index,
-                            private int $total,
-                            private array $tempProperties
-                        ) {}
-
-                        public function __get($name) {
-                            // Variabili speciali del loop
-                            if ($name === '$index') return $this->index;
-                            if ($name === '$first') return $this->index === 0;
-                            if ($name === '$last') return $this->index === $this->total - 1;
-                            if ($name === '$even') return $this->index % 2 === 0;
-                            if ($name === '$odd') return $this->index % 2 !== 0;
-                            if ($name === '$count') return $this->total;
-
-                            // Proprietà temporanee (per loop annidati)
-                            if (isset($this->tempProperties[$name])) {
-                                return $this->tempProperties[$name];
-                            }
-
-                            // Proprietà dell'item corrente
-                            if (is_object($this->itemData) && property_exists($this->itemData, $name)) {
-                                return $this->itemData->$name;
-                            }
-                            if (is_array($this->itemData) && isset($this->itemData[$name])) {
-                                return $this->itemData[$name];
-                            }
-
-                            // Fallback al parent
-                            return $this->parent->$name ?? null;
-                        }
-
-                        public function __isset($name) {
-                            if (in_array($name, ['$index', '$first', '$last', '$even', '$odd', '$count'])) {
-                                return true;
-                            }
-                            if (isset($this->tempProperties[$name])) {
-                                return true;
-                            }
-                            if (is_object($this->itemData)) {
-                                return property_exists($this->itemData, $name);
-                            }
-                            if (is_array($this->itemData)) {
-                                return isset($this->itemData[$name]);
-                            }
-                            return isset($this->parent->$name);
-                        }
-                    };
-
-                    // Sostituisci riferimenti all'item nel template
-                    $itemContent = $this->replaceItemReferences($content, $itemVar, $itemObject);
-
-                    // Processa ricorsivamente eventuali @for annidati
-                    $itemContent = $this->processForDirective($itemContent, $loopContext);
-
-                    // Renderizza il contenuto
-                    $renderedContent = $this->renderChildrenInLoopContext(
-                        $itemContent,
-                        $loopContext,
-                        $itemVar,
-                        $itemObject
-                    );
-
-                    $replacement .= $renderedContent;
-                }
-            }
-
-            $tpl = substr($tpl, 0, $startPos) . $replacement . substr($tpl, $afterFor);
-        }
-
-        return $tpl;
-    }
-
-    private function replaceItemReferences(string $tpl, string $itemVar, object $item): string
-    {
-        // Sostituisci binding come [name]="user.name"
-        $tpl = preg_replace_callback(
-            '/\[(\w+)\]\s*=\s*"' . preg_quote($itemVar, '/') . '\.(\w+(?:\.\w+)*)"/s',
-            function ($m) use ($item) {
-                $propName = $m[1];
-                $itemPath = $m[2];
-
-                $value = $this->resolveProperty($itemPath, $item);
-
-                if (is_array($value)) {
-                    return "[{$propName}]=\"__array_literal:" . base64_encode(serialize($value)) . "\"";
-                }
-
-                return "[{$propName}]=\"__literal:{$value}\"";
-            },
-            $tpl
-        );
-
-        // Sostituisci @for annidati come @for(user of app.users...)
-        $tpl = preg_replace_callback(
-            '/@for\s*\(\s*(\w+)\s+of\s+' . preg_quote($itemVar, '/') . '\.(\w+(?:\.\w+)*)\s*;/s',
-            function ($m) use ($itemVar) {
-                $loopVar = $m[1];
-                $propertyPath = $m[2];
-
-                $tempName = '__temp_' . $itemVar . '_' . str_replace('.', '_', $propertyPath);
-
-                return "@for ($loopVar of $tempName;";
-            },
-            $tpl
-        );
-
-        return $tpl;
-    }
-
-    private function renderChildrenInLoopContext(
-        string $tpl,
-        object $context,
-        string $itemVar,
-        object $item
-    ): string {
-        // Interpola le variabili {{ }}
-        $tpl = $this->interpolateInLoopContext($tpl, $itemVar, $item, $context);
-
-        // Renderizza i componenti
-        $pattern = '/<([\w-]+)([^>]*)>(.*?)<\/\1>/s';
-
-        return preg_replace_callback(
-            $pattern,
-            function ($m) use ($context) {
-                $selector = $m[1];
-                $attrString = $m[2];
-                $content = $m[3];
-
-                $entry = $this->registry->get($selector);
-                if (!$entry) {
-                    return $m[0];
-                }
-
-                $bindings = $this->parseBindings($attrString);
-                $child = new ($entry['class'])();
-
-                $this->resolveBindingsInContext($context, $child, $bindings);
-
-                return $this->renderInstance($child, $entry['config'], 0);
-            },
-            $tpl
-        );
-    }
-
-    private function resolveBindingsInContext(object $parent, object $child, array $bindings): void
-    {
-        $ref = new \ReflectionObject($child);
+        $ref = new ReflectionObject($component);
 
         foreach ($ref->getProperties() as $prop) {
-            $attr = $prop->getAttributes(Input::class)[0] ?? null;
-            if (!$attr) {
+            $inputAttr = $prop->getAttributes(Input::class)[0] ?? null;
+
+            if (!$inputAttr) {
                 continue;
             }
 
-            $input = $attr->newInstance();
+            /** @var Input $input */
+            $input = $inputAttr->newInstance();
             $name = $input->alias ?? $prop->getName();
 
             if (!array_key_exists($name, $bindings)) {
                 continue;
             }
 
-            $expression = $bindings[$name];
-
-            if (str_starts_with($expression, '__literal:')) {
-                $value = substr($expression, 10);
-            } elseif (str_starts_with($expression, '__array_literal:')) {
-                $serialized = substr($expression, 16);
-                $value = unserialize(base64_decode($serialized));
-            } else {
-                $value = $this->evaluateExpression($expression, $parent);
-            }
-
             $prop->setAccessible(true);
-            $prop->setValue($child, $value);
+            $prop->setValue($component, $bindings[$name]);
         }
     }
 
-    private function interpolateInLoopContext(
-        string $tpl,
-        string $itemVar,
-        object $item,
-        object $context
-    ): string {
-        return preg_replace_callback(
-            '/{{\s*(\$?\w+(?:\.\w+)*)\s*}}/',
-            function ($m) use ($itemVar, $item, $context) {
-                $path = $m[1];
-
-                if (str_starts_with($path, '$')) {
-                    return htmlspecialchars($context->$path ?? '');
-                }
-
-                if (str_starts_with($path, $itemVar)) {
-                    $subPath = substr($path, strlen($itemVar));
-                    if ($subPath === '') {
-                        return htmlspecialchars($item);
-                    }
-                    if (str_starts_with($subPath, '.')) {
-                        $property = substr($subPath, 1);
-                        $value = $this->resolveProperty($property, $item);
-                        return htmlspecialchars($value ?? '');
-                    }
-                }
-
-                $value = $this->resolveProperty($path, $context);
-                return htmlspecialchars($value ?? '');
-            },
-            $tpl
-        );
-    }
-
-    private function renderChildren(string $tpl, object $parent, int $depth = 0): string
+    /**
+     * Inietta dati nel componente (per route params, etc.)
+     *
+     * @param object $component Istanza del componente
+     * @param array $data Dati da iniettare
+     */
+    private function injectData(object $component, array $data): void
     {
-        if ($depth > 50) {
-            throw new \RuntimeException("Maximum component nesting depth exceeded (50 levels)");
+        foreach ($data as $key => $value) {
+            if (property_exists($component, $key)) {
+                $component->$key = $value;
+            }
         }
-
-        $tpl = $this->processIfDirective($tpl, $parent);
-        $tpl = $this->processForDirective($tpl, $parent);
-
-        $pattern = '/<([\w-]+)([^>]*)>(.*?)<\/\1>/s';
-
-        $result = preg_replace_callback(
-            $pattern,
-            function ($m) use ($parent, $depth) {
-                $selector = $m[1];
-                $attrString = $m[2];
-                $content = $m[3];
-
-                $entry = $this->registry->get($selector);
-                if (!$entry) {
-                    if (!empty($content)) {
-                        $renderedContent = $this->renderChildren($content, $parent, $depth + 1);
-                        return "<{$selector}{$attrString}>{$renderedContent}</{$selector}>";
-                    }
-                    return $m[0];
-                }
-
-                $bindings = $this->parseBindings($attrString);
-                $child = new ($entry['class'])();
-
-                (new InputResolver())->resolve($parent, $child, $bindings);
-
-                return $this->renderInstance($child, $entry['config'], $depth + 1);
-            },
-            $tpl
-        );
-
-        return $result;
     }
 
-    private function parseBindings(string $attrString): array
+    /**
+     * Estrae tutti i dati pubblici da un componente per passarli a Twig
+     *
+     * @param object $component Istanza del componente
+     * @return array Array associativo di dati
+     */
+    private function extractComponentData(object $component): array
     {
-        $bindings = [];
-        $attrString = trim($attrString);
+        $data = [];
+        $reflection = new ReflectionObject($component);
 
-        if (empty($attrString)) {
-            return $bindings;
+        // Estrai proprietà pubbliche
+        foreach ($reflection->getProperties(\ReflectionProperty::IS_PUBLIC) as $prop) {
+            $name = $prop->getName();
+            $data[$name] = $prop->getValue($component);
         }
 
-        preg_match_all(
-            '/\[(\w+)\]\s*=\s*"([^"]+)"/s',
-            $attrString,
-            $matches,
-            PREG_SET_ORDER
-        );
-
-        foreach ($matches as $m) {
-            $bindings[trim($m[1])] = trim($m[2]);
+        // Estrai metodi pubblici getter (getNomeMetodo)
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if (str_starts_with($method->getName(), 'get') && $method->getNumberOfParameters() === 0) {
+                $propertyName = lcfirst(substr($method->getName(), 3));
+                $data[$propertyName] = $method->invoke($component);
+            }
         }
 
-        return $bindings;
+        return $data;
     }
 
-    private function renderInstance(
-        object $component,
-        Component $config,
-        int $depth = 0
-    ): string {
-        $template = file_get_contents($config->template);
-        $template = $this->renderChildren($template, $component, $depth);
-        return $this->interpolate($template, $component);
+    /**
+     * Helper per ottenere dati di route (usato nei template)
+     *
+     * @param string|null $key Chiave specifica o null per tutti i dati
+     * @return mixed
+     */
+    public function getRouteData(?string $key = null): mixed
+    {
+        $router = \App\Router\Router::getInstance();
+        return $router->getCurrentRouteData($key);
+    }
+
+    /**
+     * Helper per generare URL (usato nei template)
+     *
+     * @param string $name Nome della route
+     * @param array $params Parametri per la route
+     * @return string URL generato
+     */
+    public function generateUrl(string $name, array $params = []): string
+    {
+        try {
+            $router = \App\Router\Router::getInstance();
+            return $router->url($name, $params);
+        } catch (\Exception $e) {
+            return '#';
+        }
+    }
+
+    /**
+     * Ottiene l'ambiente Twig (per estensioni custom)
+     *
+     * @return Environment
+     */
+    public function getTwig(): Environment
+    {
+        return $this->twig;
+    }
+
+    /**
+     * Aggiunge un path per i template
+     *
+     * @param string $path Path da aggiungere
+     * @param string|null $namespace Namespace opzionale
+     */
+    public function addTemplatePath(string $path, ?string $namespace = null): void
+    {
+        $loader = $this->twig->getLoader();
+
+        if ($loader instanceof FilesystemLoader) {
+            if ($namespace) {
+                $loader->addPath($path, $namespace);
+            } else {
+                $loader->addPath($path);
+            }
+        }
     }
 }

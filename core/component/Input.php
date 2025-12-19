@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Component;
 
 use Attribute;
@@ -9,7 +8,5 @@ readonly class Input
 {
     public function __construct(
         public ?string $alias = null
-    )
-    {
-    }
+    ) {}
 }

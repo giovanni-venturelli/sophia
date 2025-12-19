@@ -1,5 +1,6 @@
 <?php
 namespace App\Router\Models;
+
 /**
  * Rappresentazione di una route finale (dopo elaborazione)
  */
@@ -24,6 +25,11 @@ final class Route
         $this->pattern = $this->compilePattern();
     }
 
+    /**
+     * Compila il path in una regex per il matching
+     *
+     * @return string Pattern regex
+     */
     private function compilePattern(): string
     {
         // Sostituisce :param con regex
@@ -33,6 +39,12 @@ final class Route
         return '#^' . $pattern . '$#';
     }
 
+    /**
+     * Verifica se la route matcha il path dato
+     *
+     * @param string $path Path da verificare
+     * @return array|null Array di parametri se match, null altrimenti
+     */
     public function matches(string $path): ?array
     {
         if (preg_match($this->pattern, $path, $matches)) {
@@ -42,5 +54,22 @@ final class Route
             }, ARRAY_FILTER_USE_KEY);
         }
         return null;
+    }
+
+    /**
+     * Genera URL dalla route sostituendo i parametri
+     *
+     * @param array $params Parametri da sostituire
+     * @return string URL generato
+     */
+    public function generateUrl(array $params = []): string
+    {
+        $url = $this->path;
+
+        foreach ($params as $key => $value) {
+            $url = str_replace(":$key", (string)$value, $url);
+        }
+
+        return $url;
     }
 }

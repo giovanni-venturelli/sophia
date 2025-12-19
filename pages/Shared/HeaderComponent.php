@@ -1,0 +1,32 @@
+<?php
+namespace App\Pages\Shared;
+
+use App\Component\Component;
+use App\Component\Input;
+
+#[Component(
+    selector: 'app-header',
+    template: 'Shared/header.html.twig'
+)]
+class HeaderComponent
+{
+    #[Input]
+    public string $title = 'My App';
+
+    public array $navigation = [];
+
+    public function __construct()
+    {
+        $this->navigation = [
+            ['label' => 'Home', 'url' => '/', 'active' => true],
+            ['label' => 'Dashboard', 'url' => '/dashboard', 'active' => false],
+            ['label' => 'About', 'url' => '/about', 'active' => false],
+            ['label' => 'Contact', 'url' => '/contact', 'active' => false],
+        ];
+    }
+
+    public function getNavigationCount(): int
+    {
+        return count($this->navigation);
+    }
+}

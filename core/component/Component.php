@@ -10,6 +10,8 @@ readonly class Component
         public string  $selector,
         public ?string $template = null,
         public array   $styles = [],
+        public array   $imports = [],
+        public array   $providers = [],
         public array   $meta = []
     ) {}
 }
