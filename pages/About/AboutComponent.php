@@ -2,9 +2,9 @@
 namespace App\Pages\About;
 
 use App\Component\Component;
-use App\Pages\Shared\FeatureCard\FeatureCardComponent;
-use App\Pages\Shared\Footer\FooterComponent;
-use App\Pages\Shared\Header\HeaderComponent;
+use Shared\FeatureCard\FeatureCardComponent;
+use Shared\Footer\FooterComponent;
+use Shared\Header\HeaderComponent;
 
 #[Component(
 selector: 'app-about',

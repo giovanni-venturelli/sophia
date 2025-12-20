@@ -6,7 +6,8 @@
             "App\\Router\\": "core/router/",
             "App\\Router\\Models\\": "core/router/models/",
             "App\\Component\\": "core/component/",
-            "App\\Pages\\": "pages/"
+            "App\\Pages\\": "pages/",
+            "Shared\\": "Shared/"
         }
     },
     "authors": [

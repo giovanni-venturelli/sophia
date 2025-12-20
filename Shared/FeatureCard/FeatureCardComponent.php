@@ -1,5 +1,5 @@
 <?php
-namespace App\Pages\Shared\FeatureCard;
+namespace Shared\FeatureCard;
 
 use App\Component\Component;
 use App\Component\Input;

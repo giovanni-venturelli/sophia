@@ -1,5 +1,5 @@
 <?php
-namespace App\Pages\Shared\Footer;
+namespace Shared\Footer;
 
 use App\Component\Component;
 use App\Component\Input;

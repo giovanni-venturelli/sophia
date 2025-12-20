@@ -1,5 +1,5 @@
 <?php
-namespace App\Pages\Shared\Header;
+namespace Shared\Header;
 
 use App\Component\Component;
 use App\Component\Input;

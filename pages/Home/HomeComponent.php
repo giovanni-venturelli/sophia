@@ -7,9 +7,9 @@ namespace App\Pages\Home;
 
 use App\Component\Component;
 use App\Component\Input;
-use App\Pages\Shared\FeatureCard\FeatureCardComponent;
-use App\Pages\Shared\Footer\FooterComponent;
-use App\Pages\Shared\Header\HeaderComponent;
+use Shared\FeatureCard\FeatureCardComponent;
+use Shared\Footer\FooterComponent;
+use Shared\Header\HeaderComponent;
 
 #[Component(
     selector: 'app-home',
