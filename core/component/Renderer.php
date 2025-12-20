@@ -3,10 +3,15 @@ namespace App\Component;
 
 use App\Router\Router;
 use ReflectionClass;
+use ReflectionException;
 use ReflectionMethod;
 use ReflectionObject;
 use ReflectionProperty;
+use RuntimeException;
 use Twig\Environment;
+use Twig\Error\LoaderError;
+use Twig\Error\RuntimeError;
+use Twig\Error\SyntaxError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
 
@@ -17,6 +22,9 @@ class Renderer
     private ComponentRegistry $registry;
     private array $templatePaths = [];
 
+    /**
+     * @throws LoaderError
+     */
     public function __construct(ComponentRegistry $registry, string $templatesPath, string $cachePath, bool $debug = true)
     {
         $this->registry = $registry;
@@ -38,6 +46,7 @@ class Renderer
 
     /**
      * 🔥 PATH RELATIVI → NOME RELATIVO per Twig!
+     * @throws ReflectionException|LoaderError
      */
     private function resolveTemplatePath(string $componentClass, string $template): string
     {
@@ -60,14 +69,20 @@ class Renderer
             }
         }
 
-        throw new \RuntimeException("Template '{$template}' not found for {$componentClass}");
+        throw new RuntimeException("Template '{$template}' not found for {$componentClass}");
     }
 
+    /**
+     * @throws SyntaxError
+     * @throws ReflectionException
+     * @throws RuntimeError
+     * @throws LoaderError
+     */
     public function renderRoot(string $selector, array $data = []): string
     {
         $entry = $this->registry->get($selector);
         if (!$entry) {
-            throw new \RuntimeException("Component {$selector} not found");
+            throw new RuntimeException("Component {$selector} not found");
         }
 
         $instance = new $entry['class']();
@@ -75,13 +90,19 @@ class Renderer
         return $this->renderInstance($instance, $entry['config']);
     }
 
+    /**
+     * @throws SyntaxError
+     * @throws ReflectionException
+     * @throws RuntimeError
+     * @throws LoaderError
+     */
     private function renderInstance(object $component, Component $config): string
     {
         if (!$config->template) {
-            throw new \RuntimeException("Component {$config->selector} has no template");
+            throw new RuntimeException("Component {$config->selector} has no template");
         }
 
-        // 🔥 OTTIENI NOME RELATIVO e registra path
+        //  OTTIENI NOME RELATIVO e registra path
         $templateName = $this->resolveTemplatePath(get_class($component), $config->template);
 
         $templateData = $this->extractComponentData($component);
@@ -90,10 +111,62 @@ class Renderer
             'meta' => $config->meta ?? []
         ];
 
-        return $this->twig->render($templateName, $templateData); // ← NOME RELATIVO!
+        $html = $this->twig->render($templateName, $templateData);
+
+        // 🔥 CSS GLOBALI PURI!
+        if (!empty($config->styles)) {
+            $cssContent = $this->loadStyles(get_class($component), $config->styles);
+            $html = $this->injectGlobalStyles($html, $cssContent);
+        }
+
+        return $html;
+    }
+
+    /**
+     * Carica array di CSS files
+     * @throws ReflectionException
+     */
+    private function loadStyles(string $componentClass, array $styles): string
+    {
+        $reflection = new ReflectionClass($componentClass);
+        $componentDir = dirname($reflection->getFileName());
+
+        $cssContent = '';
+        foreach ($styles as $styleFile) {
+            $cssPath = realpath($componentDir . '/' . $styleFile);
+            if (!$cssPath || !file_exists($cssPath)) {
+                throw new RuntimeException("Style '{$styleFile}' not found for {$componentClass}");
+            }
+            $cssContent .= file_get_contents($cssPath) . "\n\n";
+        }
+
+        return $cssContent;
+    }
+
+    /**
+     * Inietta CSS globale nel <head> - NO SCOPE!
+     */
+    private function injectGlobalStyles(string $html, string $css): string
+    {
+        $styleId = 'global-styles-' . uniqid();
+        $styleTag = "<style id=\"{$styleId}\">\n{$css}\n</style>";
+
+        // Inietta nel primo <head>
+        if (stripos($html, '<head>') !== false) {
+            return preg_replace('/<\/head>/i', $styleTag . '</head>', $html, 1);
+        }
+
+        return $styleTag . $html;
     }
 
     // ... RESTO IDENTICO (renderComponent, applyInputBindings, etc.)
+
+    /**
+     * @throws SyntaxError
+     * @throws ReflectionException
+     * @throws RuntimeError
+     * @throws LoaderError
+     */
     public function renderComponent(string $selector, array $bindings = []): string
     {
         $entry = $this->registry->get($selector);
@@ -125,7 +198,6 @@ class Renderer
 
             if (!array_key_exists($name, $bindings)) continue;
 
-            $prop->setAccessible(true);
             $prop->setValue($component, $bindings[$name]);
         }
     }
@@ -139,6 +211,9 @@ class Renderer
         }
     }
 
+    /**
+     * @throws ReflectionException
+     */
     private function extractComponentData(object $component): array
     {
         $data = [];
@@ -175,6 +250,9 @@ class Renderer
         return $this->twig;
     }
 
+    /**
+     * @throws LoaderError
+     */
     public function addTemplatePath(string $path, ?string $namespace = null): void
     {
         $realPath = realpath($path);

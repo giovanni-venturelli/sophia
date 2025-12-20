@@ -1,0 +1,54 @@
+.feature-card {
+    padding: 2rem;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s, box-shadow 0.3s;
+    position: relative;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+}
+
+.feature-card .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+.feature-card p {
+    color: #666;
+    line-height: 1.6;
+}
+
+.feature-card.border-blue { border-left: 4px solid #3b82f6; }
+.feature-card.border-purple { border-left: 4px solid #8b5cf6; }
+.feature-card.border-green { border-left: 4px solid #10b981; }
+.feature-card.border-orange { border-left: 4px solid #f59e0b; }
+
+.feature-card.first {
+    border-top: 3px solid gold;
+}
+
+.feature-card.last {
+    border-top: 3px solid #10b981;
+}
+
+.feature-card .badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}

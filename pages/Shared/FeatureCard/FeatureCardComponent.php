@@ -6,7 +6,8 @@ use App\Component\Input;
 
 #[Component(
     selector: 'app-feature-card',
-    template: 'feature-card.html.twig'
+    template: 'feature-card.html.twig',
+    styles: ['feature-card.css']
 )]
 class FeatureCardComponent
 {

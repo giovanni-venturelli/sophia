@@ -14,6 +14,7 @@ use App\Pages\Shared\Header\HeaderComponent;
 #[Component(
     selector: 'app-home',
     template: 'home.html.twig',
+    styles: ['home.css'],
     imports: [
         HeaderComponent::class,
         FooterComponent::class,

@@ -1,6 +1,6 @@
 <?php
 /**
- * ComponentRegistry - Singleton per la gestione centralizzata dei componenti
+ * ComponentRegistry - Singleton for centralized component management
  */
 namespace App\Component;
 
@@ -17,7 +17,7 @@ class ComponentRegistry
     private array $components = [];
 
     /**
-     * Ottiene l'istanza singleton
+     *
      */
     public static function getInstance(): self
     {
@@ -28,7 +28,7 @@ class ComponentRegistry
     }
 
     /**
-     * Registra un singolo componente (con auto-imports)
+     *
      * @throws ReflectionException
      */
     public function register(string $class): void
@@ -54,14 +54,14 @@ class ComponentRegistry
             'reflection' => $ref
         ];
 
-        // 🔥 AUTO-REGISTRAZIONE RICORSIVA imports
+        // 🔥 auto-registration
         foreach ($config->imports ?? [] as $importClass) {
             $this->register($importClass);
         }
     }
 
     /**
-     * 🔥 NUOVO: Registrazione LAZY per Router (solo quando serve!)
+     * Lazy Registration
      */
     public function lazyRegister(string $class): string
     {
@@ -72,18 +72,10 @@ class ComponentRegistry
         return $selector;
     }
 
-    /**
-     * 🔥 NUOVO: Registrazione ricorsiva con options
-     */
-    public function registerWithImports(array $classes, array $options = []): void
-    {
-        foreach ($classes as $class) {
-            $this->registerRecursive($class, $options);
-        }
-    }
 
     /**
-     * 🔥 METODO PRIVATO: Registrazione ricorsiva completa
+     *
+     * @throws ReflectionException
      */
     private function registerRecursive(string $class, array $options = []): void
     {
@@ -102,7 +94,7 @@ class ComponentRegistry
     }
 
     /**
-     * Registra una classe specifica (senza ricorsione)
+     *
      * @throws ReflectionException
      */
     private function registerClass(string $class, array $options = []): void
@@ -126,7 +118,7 @@ class ComponentRegistry
     }
 
     /**
-     * 🔥 OTTIMIZZATO: Ottiene selector da classe
+     *
      */
     private function getSelectorFromClass(string $class): string
     {
@@ -143,7 +135,7 @@ class ComponentRegistry
     }
 
     /**
-     * 🔥 NUOVO: Estrae imports dall'attributo Component esistente
+     *
      */
     private function getImportsFromComponentAttribute(string $class): array
     {
@@ -164,7 +156,7 @@ class ComponentRegistry
     }
 
     /**
-     * Verifica se un componente è già registrato
+     * Check if a component is already registered
      */
     public function has(string $selector): bool
     {
@@ -172,7 +164,7 @@ class ComponentRegistry
     }
 
     /**
-     * Verifica se una classe o selector è registrato (legacy)
+     * Check if a class or a selector is registered
      */
     public function isRegistered(string $classOrSelector): bool
     {
@@ -192,7 +184,7 @@ class ComponentRegistry
     }
 
     /**
-     * Ottiene i dati di un componente dal selector
+     * Gets component's data from a selector
      */
     public function get(string $selector): ?array
     {
@@ -200,7 +192,7 @@ class ComponentRegistry
     }
 
     /**
-     * Ottiene tutti i selettori registrati
+     * Gets all registered selectors (debug purposes)
      */
     public function getSelectors(): array
     {
@@ -208,7 +200,7 @@ class ComponentRegistry
     }
 
     /**
-     * Ottiene tutte le classi registrate
+     * Gets all registered classes (debug purposes)
      */
     public function getClasses(): array
     {
@@ -216,7 +208,7 @@ class ComponentRegistry
     }
 
     /**
-     * Ottiene tutti i componenti
+     *Gets all registered components (debug purposes)
      */
     public function getAll(): array
     {

@@ -6,7 +6,8 @@ use App\Component\Input;
 
 #[Component(
     selector: 'app-header',
-    template: 'header.html.twig'
+    template: 'header.html.twig',
+    styles: ['header.css']
 )]
 class HeaderComponent
 {

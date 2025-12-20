@@ -6,7 +6,8 @@ use App\Component\Input;
 
 #[Component(
     selector: 'app-footer',
-    template: 'footer.html.twig'
+    template: 'footer.html.twig',
+    styles: ['footer.css']
 )]
 class FooterComponent
 {
