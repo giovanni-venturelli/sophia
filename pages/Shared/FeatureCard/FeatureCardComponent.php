@@ -1,12 +1,12 @@
 <?php
-namespace App\Pages\Shared;
+namespace App\Pages\Shared\FeatureCard;
 
 use App\Component\Component;
 use App\Component\Input;
 
 #[Component(
     selector: 'app-feature-card',
-    template: 'Shared/feature-card.html.twig'
+    template: 'feature-card.html.twig'
 )]
 class FeatureCardComponent
 {

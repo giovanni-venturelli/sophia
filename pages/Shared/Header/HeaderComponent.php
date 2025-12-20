@@ -1,12 +1,12 @@
 <?php
-namespace App\Pages\Shared;
+namespace App\Pages\Shared\Header;
 
 use App\Component\Component;
 use App\Component\Input;
 
 #[Component(
     selector: 'app-header',
-    template: 'Shared/header.html.twig'
+    template: 'header.html.twig'
 )]
 class HeaderComponent
 {

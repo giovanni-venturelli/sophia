@@ -1,12 +1,12 @@
 <?php
-namespace App\Pages\Shared;
+namespace App\Pages\Shared\Footer;
 
 use App\Component\Component;
 use App\Component\Input;
 
 #[Component(
     selector: 'app-footer',
-    template: 'Shared/footer.html.twig'
+    template: 'footer.html.twig'
 )]
 class FooterComponent
 {

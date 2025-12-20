@@ -6,13 +6,13 @@
 namespace App\Pages\Home;
 
 use App\Component\Component;
-use App\Pages\Shared\HeaderComponent;
-use App\Pages\Shared\FooterComponent;
-use App\Pages\Shared\FeatureCardComponent;
+use App\Pages\Shared\FeatureCard\FeatureCardComponent;
+use App\Pages\Shared\Footer\FooterComponent;
+use App\Pages\Shared\Header\HeaderComponent;
 
 #[Component(
     selector: 'app-home',
-    template: 'Home/home.html.twig',
+    template: 'home.html.twig',
     imports: [
         HeaderComponent::class,
         FooterComponent::class,

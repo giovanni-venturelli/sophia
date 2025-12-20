@@ -1,176 +1,135 @@
 <?php
 namespace App\Component;
 
+use App\Router\Router;
+use ReflectionClass;
+use ReflectionMethod;
+use ReflectionObject;
+use ReflectionProperty;
 use Twig\Environment;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
-use ReflectionObject;
+
 
 class Renderer
 {
     private Environment $twig;
     private ComponentRegistry $registry;
+    private array $templatePaths = [];
 
-    public function __construct(
-        ComponentRegistry $registry,
-        string $templatesPath = __DIR__ . '/../../pages',
-        string $cachePath = __DIR__ . '/../../cache/twig',
-        bool $debug = true
-    ) {
+    public function __construct(ComponentRegistry $registry, string $templatesPath, string $cachePath, bool $debug = true)
+    {
         $this->registry = $registry;
 
-        // Configura il loader per cercare i template in più directory
-        $loader = new FilesystemLoader($templatesPath);
-
+        // PRIMA crea loader vuoto
+        $loader = new FilesystemLoader();
         $this->twig = new Environment($loader, [
             'cache' => $cachePath,
-            'auto_reload' => true,
+            'auto_reload' => $debug,
             'debug' => $debug,
             'strict_variables' => true,
         ]);
 
-        // Aggiungi funzioni custom per supportare i componenti
+        // POI aggiungi paths (AGGIORNA loader dinamicamente)
+        $this->addTemplatePath($templatesPath);
+
         $this->registerCustomFunctions();
     }
 
     /**
-     * Registra funzioni Twig custom per gestire i componenti
+     * 🔥 PATH RELATIVI → NOME RELATIVO per Twig!
      */
-    private function registerCustomFunctions(): void
+    private function resolveTemplatePath(string $componentClass, string $template): string
     {
-        // Funzione per renderizzare un componente
-        // Uso: {{ component('app-user-card', {name: 'Mario'}) }}
-        $this->twig->addFunction(new TwigFunction(
-            'component',
-            [$this, 'renderComponent'],
-            ['is_safe' => ['html']]
-        ));
+        $reflection = new ReflectionClass($componentClass);
+        $componentDir = dirname($reflection->getFileName());
 
-        // Funzione per ottenere dati di route
-        // Uso: {{ route_data('title') }}
-        $this->twig->addFunction(new TwigFunction(
-            'route_data',
-            [$this, 'getRouteData']
-        ));
+        // Prova path relativo dal componente
+        $fullPath = realpath($componentDir . '/' . $template);
+        if ($fullPath && file_exists($fullPath)) {
+            $this->addTemplatePath(dirname($fullPath)); // Registra directory
+            return basename($fullPath); // ← SOLO NOME!
+        }
 
-        // Funzione per generare URL
-        // Uso: {{ url('home', {id: 123}) }}
-        $this->twig->addFunction(new TwigFunction(
-            'url',
-            [$this, 'generateUrl']
-        ));
+        // Fallback globali
+        $templateName = basename($template);
+        foreach ($this->templatePaths as $basePath) {
+            $fullPath = realpath($basePath . '/' . $templateName);
+            if ($fullPath && file_exists($fullPath)) {
+                return $templateName; // ← SOLO NOME!
+            }
+        }
+
+        throw new \RuntimeException("Template '{$template}' not found for {$componentClass}");
     }
 
-    /**
-     * Renderizza un componente root
-     *
-     * @param string $selector Selector del componente
-     * @param array $data Dati da passare al componente (route params, etc.)
-     * @return string HTML renderizzato
-     */
     public function renderRoot(string $selector, array $data = []): string
     {
         $entry = $this->registry->get($selector);
-
         if (!$entry) {
-            throw new \RuntimeException("Component '$selector' not found");
+            throw new \RuntimeException("Component {$selector} not found");
         }
 
-        // Crea un'istanza del componente
-        $instance = new ($entry['class'])();
-
-        // Passa i dati al componente (per route params, query string, etc.)
+        $instance = new $entry['class']();
         $this->injectData($instance, $data);
-
         return $this->renderInstance($instance, $entry['config']);
     }
 
-    /**
-     * Renderizza un'istanza di componente
-     *
-     * @param object $component Istanza del componente
-     * @param Component $config Configurazione del componente
-     * @return string HTML renderizzato
-     */
     private function renderInstance(object $component, Component $config): string
     {
         if (!$config->template) {
-            throw new \RuntimeException("Component '{$config->selector}' has no template");
+            throw new \RuntimeException("Component {$config->selector} has no template");
         }
 
-        // Estrai tutti i dati pubblici dal componente
-        $templateData = $this->extractComponentData($component);
+        // 🔥 OTTIENI NOME RELATIVO e registra path
+        $templateName = $this->resolveTemplatePath(get_class($component), $config->template);
 
-        // Aggiungi metadati utili
-        $templateData['_component'] = [
+        $templateData = $this->extractComponentData($component);
+        $templateData['__component'] = [
             'selector' => $config->selector,
-            'meta' => $config->meta
+            'meta' => $config->meta ?? []
         ];
 
-        // Renderizza con Twig
-        return $this->twig->render($config->template, $templateData);
+        return $this->twig->render($templateName, $templateData); // ← NOME RELATIVO!
     }
 
-    /**
-     * Renderizza un componente child (chiamato da template Twig)
-     *
-     * @param string $selector Selector del componente
-     * @param array $bindings Dati da passare al componente
-     * @return string HTML renderizzato
-     */
+    // ... RESTO IDENTICO (renderComponent, applyInputBindings, etc.)
     public function renderComponent(string $selector, array $bindings = []): string
     {
         $entry = $this->registry->get($selector);
-
         if (!$entry) {
-            return "<!-- Component '$selector' not found -->";
+            return "<!-- Component {$selector} not found -->";
         }
 
-        // Crea istanza del componente
-        $instance = new ($entry['class'])();
-
-        // Applica i bindings alle proprietà @Input del componente
+        $instance = new $entry['class']();
         $this->applyInputBindings($instance, $bindings);
-
         return $this->renderInstance($instance, $entry['config']);
     }
 
-    /**
-     * Applica i binding alle proprietà @Input del componente
-     *
-     * @param object $component Istanza del componente
-     * @param array $bindings Array associativo nome => valore
-     */
+    private function registerCustomFunctions(): void
+    {
+        $this->twig->addFunction(new TwigFunction('component', [$this, 'renderComponent'], ['is_safe' => ['html']]));
+        $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
+        $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
+    }
+
     private function applyInputBindings(object $component, array $bindings): void
     {
         $ref = new ReflectionObject($component);
-
         foreach ($ref->getProperties() as $prop) {
             $inputAttr = $prop->getAttributes(Input::class)[0] ?? null;
+            if (!$inputAttr) continue;
 
-            if (!$inputAttr) {
-                continue;
-            }
-
-            /** @var Input $input */
             $input = $inputAttr->newInstance();
             $name = $input->alias ?? $prop->getName();
 
-            if (!array_key_exists($name, $bindings)) {
-                continue;
-            }
+            if (!array_key_exists($name, $bindings)) continue;
 
             $prop->setAccessible(true);
             $prop->setValue($component, $bindings[$name]);
         }
     }
 
-    /**
-     * Inietta dati nel componente (per route params, etc.)
-     *
-     * @param object $component Istanza del componente
-     * @param array $data Dati da iniettare
-     */
     private function injectData(object $component, array $data): void
     {
         foreach ($data as $key => $value) {
@@ -180,25 +139,16 @@ class Renderer
         }
     }
 
-    /**
-     * Estrae tutti i dati pubblici da un componente per passarli a Twig
-     *
-     * @param object $component Istanza del componente
-     * @return array Array associativo di dati
-     */
     private function extractComponentData(object $component): array
     {
         $data = [];
         $reflection = new ReflectionObject($component);
 
-        // Estrai proprietà pubbliche
-        foreach ($reflection->getProperties(\ReflectionProperty::IS_PUBLIC) as $prop) {
-            $name = $prop->getName();
-            $data[$name] = $prop->getValue($component);
+        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
+            $data[$prop->getName()] = $prop->getValue($component);
         }
 
-        // Estrai metodi pubblici getter (getNomeMetodo)
-        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             if (str_starts_with($method->getName(), 'get') && $method->getNumberOfParameters() === 0) {
                 $propertyName = lcfirst(substr($method->getName(), 3));
                 $data[$propertyName] = $method->invoke($component);
@@ -208,60 +158,39 @@ class Renderer
         return $data;
     }
 
-    /**
-     * Helper per ottenere dati di route (usato nei template)
-     *
-     * @param string|null $key Chiave specifica o null per tutti i dati
-     * @return mixed
-     */
     public function getRouteData(?string $key = null): mixed
     {
-        $router = \App\Router\Router::getInstance();
+        $router = Router::getInstance();
         return $router->getCurrentRouteData($key);
     }
 
-    /**
-     * Helper per generare URL (usato nei template)
-     *
-     * @param string $name Nome della route
-     * @param array $params Parametri per la route
-     * @return string URL generato
-     */
     public function generateUrl(string $name, array $params = []): string
     {
-        try {
-            $router = \App\Router\Router::getInstance();
-            return $router->url($name, $params);
-        } catch (\Exception $e) {
-            return '#';
-        }
+        $router = Router::getInstance();
+        return $router->url($name, $params);
     }
 
-    /**
-     * Ottiene l'ambiente Twig (per estensioni custom)
-     *
-     * @return Environment
-     */
     public function getTwig(): Environment
     {
         return $this->twig;
     }
 
-    /**
-     * Aggiunge un path per i template
-     *
-     * @param string $path Path da aggiungere
-     * @param string|null $namespace Namespace opzionale
-     */
     public function addTemplatePath(string $path, ?string $namespace = null): void
     {
-        $loader = $this->twig->getLoader();
+        $realPath = realpath($path);
+        if (!$realPath || in_array($realPath, $this->templatePaths)) {
+            return;
+        }
 
+        $this->templatePaths[] = $realPath;
+
+        // 🔥 AGGIORNA LOADER DYNAMICAMENTE!
+        $loader = $this->twig->getLoader();
         if ($loader instanceof FilesystemLoader) {
             if ($namespace) {
-                $loader->addPath($path, $namespace);
+                $loader->addPath($realPath, $namespace);
             } else {
-                $loader->addPath($path);
+                $loader->addPath($realPath);
             }
         }
     }

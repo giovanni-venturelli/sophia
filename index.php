@@ -2,23 +2,11 @@
 
 use App\Component\ComponentRegistry;
 use App\Component\Renderer;
-use App\Pages\Home\HomeComponent;
-use App\Pages\Shared\HeaderComponent;
-use App\Pages\Shared\FooterComponent;
-use App\Pages\Shared\FeatureCardComponent;
 use App\Router\Router;
 
 require __DIR__ . '/vendor/autoload.php';
 
 $registry = ComponentRegistry::getInstance();
-
-// Registra SOLO le classi, niente selector qui
-$registry->registerMany([
-    HomeComponent::class,
-    HeaderComponent::class,
-    FooterComponent::class,
-    FeatureCardComponent::class,
-]);
 
 $templatesPath = __DIR__ . '/pages';
 $cachePath     = __DIR__ . '/cache/twig';

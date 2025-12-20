@@ -5,6 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/core/component" isTestSource="false" packagePrefix="App\Component\" />
       <sourceFolder url="file://$MODULE_DIR$/core/router" isTestSource="false" packagePrefix="App\Router\" />
       <sourceFolder url="file://$MODULE_DIR$/pages" isTestSource="false" packagePrefix="App\Pages\" />
+      <sourceFolder url="file://$MODULE_DIR$/core/router/models" isTestSource="false" packagePrefix="App\Router\Models\" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/composer" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/deprecation-contracts" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/polyfill-ctype" />
