@@ -6,6 +6,7 @@
 namespace App\Pages\Home;
 
 use App\Component\Component;
+use App\Component\Input;
 use App\Pages\Shared\FeatureCard\FeatureCardComponent;
 use App\Pages\Shared\Footer\FooterComponent;
 use App\Pages\Shared\Header\HeaderComponent;
@@ -21,6 +22,7 @@ use App\Pages\Shared\Header\HeaderComponent;
 )]
 class HomeComponent
 {
+    #[Input] public string $id = '';
     public string $pageTitle = 'Welcome to Our App';
     public string $subtitle = 'Build amazing things with PHP and Twig';
     public array $features = [];

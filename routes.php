@@ -11,7 +11,7 @@ $router->setBasePath('/test-route');
 $router->configure([
     // Home page
     [
-        'path' => 'home',
+        'path' => 'home/:id',
         'component' => HomeComponent::class,
         'name' => 'home',
         'data' => [
