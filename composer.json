@@ -4,9 +4,9 @@
     "autoload": {
         "psr-4": {
             "App\\Router\\": "core/router/",
+            "App\\Router\\Models\\": "core/router/models/",
             "App\\Component\\": "core/component/",
-            "App\\Pages\\": "pages/",
-            "App\\Pages\\TestComponent\\": "pages/test-component/"
+            "App\\Pages\\": "pages/"
         }
     },
     "authors": [
@@ -14,5 +14,7 @@
             "name": "Giovanni"
         }
     ],
-    "require": {}
+    "require": {
+        "twig/twig": "^3.22"
+    }
 }

@@ -42,7 +42,7 @@ final class RouteConfig
         $this->path   = $config['path'] ?? '';
         $this->method = strtoupper($config['method'] ?? 'ANY');
 
-        /** 🔴 SEPARAZIONE NETTA */
+        // Separazione netta tra component e callback
         $this->component = isset($config['component'])
             ? (is_string($config['component']) ? $config['component'] : null)
             : null;
@@ -61,6 +61,11 @@ final class RouteConfig
         $this->validate();
     }
 
+    /**
+     * Valida la configurazione della route
+     *
+     * @throws InvalidArgumentException
+     */
     private function validate(): void
     {
         if (
@@ -77,6 +82,11 @@ final class RouteConfig
         }
     }
 
+    /**
+     * Verifica se la route è un gruppo (ha children/imports)
+     *
+     * @return bool
+     */
     public function isGroup(): bool
     {
         return !empty($this->children)

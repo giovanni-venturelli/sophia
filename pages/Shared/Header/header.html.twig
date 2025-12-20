@@ -1,0 +1,25 @@
+<header class="main-header">
+    <div class="container">
+        <div class="header-content">
+            <div class="logo">
+                <span class="logo-icon">🚀</span>
+                <span class="logo-text">{{ title }}</span>
+            </div>
+
+            <nav class="navigation">
+                <ul>
+                    {% for item in navigation %}
+                        <li class="{{ item.active ? 'active' : '' }}">
+                            <a href="{{ item.url }}">{{ item.label }}</a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </nav>
+
+            <div class="header-actions">
+                <button class="btn-secondary">Login</button>
+                <button class="btn-primary">Sign Up</button>
+            </div>
+        </div>
+    </div>
+</header>

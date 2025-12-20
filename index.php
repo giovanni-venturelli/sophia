@@ -1,37 +1,34 @@
 <?php
 
-// Abilita tutti gli errori per debug
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-// Normalizza il REQUEST_URI per ambienti subdirectory
-$basePath = '/test-route';  // Modifica con il nome della tua cartella
-
-if (isset($_SERVER['REQUEST_URI'])) {
-    $uri = $_SERVER['REQUEST_URI'];
-
-    // Rimuovi il base path se presente
-    if (str_starts_with($uri, $basePath)) {
-        $uri = substr($uri, strlen($basePath));
-    }
-
-    // Normalizza
-    if ($uri === '') {
-        $uri = '/';
-    }
-
-    // Sostituisci in $_SERVER
-    $_SERVER['REQUEST_URI'] = $uri;
-}
-
-require_once __DIR__ . '/vendor/autoload.php';
-
-
-// Inizializzazione
+use App\Component\ComponentRegistry;
+use App\Component\Renderer;
 use App\Router\Router;
 
+require __DIR__ . '/vendor/autoload.php';
+
+$registry = ComponentRegistry::getInstance();
+
+$templatesPath = __DIR__ . '/pages';
+$cachePath     = __DIR__ . '/cache/twig';
+
+$renderer = new Renderer(
+    $registry,
+    $templatesPath,
+    $cachePath,
+    true
+);
+
 $router = Router::getInstance();
-//$router->setBasePath($basePath);
+$router->setComponentRegistry($registry);
+$router->setRenderer($renderer);
+$router->setBasePath('/test-route');
 
-require_once __DIR__ . '/routes.php';
+require __DIR__ . '/routes.php';
 
-$router->dispatch();
+try {
+    $router->dispatch();
+} catch (\Throwable $e) {
+    http_response_code(500);
+    echo "<pre>" . htmlspecialchars($e->getMessage()) . "\n\n" .
+        htmlspecialchars($e->getTraceAsString()) . "</pre>";
+}

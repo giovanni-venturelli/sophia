@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ pageTitle }} </title>
+
+</head>
+<body>
+{{ component('app-header', {
+    title: pageTitle
+}) }}
+
+<section class="hero">
+    <div class="container">
+        <div class="welcome">{{ welcomeMessage }}</div>
+        <h1>{{ pageTitle }} id: {{ id }}</h1>
+        <p>{{ subtitle }}</p>
+    </div>
+</section>
+
+<section class="stats-section">
+    <div class="container">
+        <div class="stats">
+            {% for stat in stats %}
+                <div class="stat-card">
+                    <div class="value">{{ stat.value }}</div>
+                    <div class="label">{{ stat.label }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Why Choose Us?</h2>
+        <p class="subtitle">
+            Abbiamo {{ featuresCount }} incredibili features per te
+        </p>
+
+        <div class="features-grid">
+            {% for feature in features %}
+                {{ component('app-feature-card', {
+                    icon: feature.icon,
+                    title: feature.title,
+                    description: feature.description,
+                    color: feature.color,
+                    isFirst: loop.first,
+                    isLast: loop.last,
+                    index: loop.index
+                }) }}
+            {% else %}
+                <p>Nessuna feature disponibile</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% if featuresCount > 3 %}
+    <section class="promo">
+        <div class="container">
+            <h3>🎉 Wow! Abbiamo più di 3 features!</h3>
+            <p>Scopri tutte le nostre {{ featuresCount }} incredibili funzionalità</p>
+        </div>
+    </section>
+{% endif %}
+
+{{ component('app-footer', {
+    year: currentYear,
+    companyName: 'My Awesome Company'
+}) }}
+</body>
+</html>
