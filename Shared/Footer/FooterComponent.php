@@ -3,6 +3,8 @@ namespace Shared\Footer;
 
 use App\Component\Component;
 use App\Component\Input;
+use App\Injector\Inject;
+use App\Services\AppService;
 
 #[Component(
     selector: 'app-footer',
@@ -20,6 +22,7 @@ class FooterComponent
     public array $socialLinks = [];
     public array $quickLinks = [];
 
+    #[Inject] private AppService $appService;
     public function __construct()
     {
         if ($this->year === 0) {
@@ -44,4 +47,9 @@ class FooterComponent
     {
         return "© {$this->year} {$this->companyName}. All rights reserved.";
     }
+    public function getServiceCount(): int
+    {
+        return count($this->appService->getItems());
+    }
+
 }

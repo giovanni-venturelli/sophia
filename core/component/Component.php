@@ -1,17 +1,20 @@
 <?php
 namespace App\Component;
 
+use App\Injector\Injector;
 use Attribute;
 
+
 #[Attribute(Attribute::TARGET_CLASS)]
-readonly class Component
+class Component
 {
     public function __construct(
-        public string  $selector,
-        public ?string $template = null,
-        public array   $styles = [],
-        public array   $imports = [],
-        public array   $providers = [],
-        public array   $meta = []
+        public string $selector,
+        public string $template,
+        public array $imports = [],
+        public array $styles = [],
+        public array $providers = [],  // Angular-style providers
+        public array $meta = []
     ) {}
 }
+

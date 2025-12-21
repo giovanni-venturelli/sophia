@@ -1,6 +1,8 @@
 <?php
+
 namespace App\Component;
 
+use App\Injector\Injector;
 use App\Router\Router;
 use ReflectionClass;
 use ReflectionException;
@@ -14,8 +16,6 @@ use Twig\Error\RuntimeError;
 use Twig\Error\SyntaxError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
-
-
 class Renderer
 {
     private Environment $twig;
@@ -25,11 +25,14 @@ class Renderer
     /**
      * @throws LoaderError
      */
-    public function __construct(ComponentRegistry $registry, string $templatesPath, string $cachePath, bool $debug = true)
-    {
+    public function __construct(
+        ComponentRegistry $registry,
+        string $templatesPath,
+        string $cachePath = '',
+        bool $debug = false
+    ) {
         $this->registry = $registry;
 
-        // PRIMA crea loader vuoto
         $loader = new FilesystemLoader();
         $this->twig = new Environment($loader, [
             'cache' => $cachePath,
@@ -38,46 +41,32 @@ class Renderer
             'strict_variables' => true,
         ]);
 
-        // POI aggiungi paths (AGGIORNA loader dinamicamente)
         $this->addTemplatePath($templatesPath);
-
         $this->registerCustomFunctions();
     }
 
-    /**
-     * 🔥 PATH RELATIVI → NOME RELATIVO per Twig!
-     * @throws ReflectionException|LoaderError
-     */
     private function resolveTemplatePath(string $componentClass, string $template): string
     {
         $reflection = new ReflectionClass($componentClass);
         $componentDir = dirname($reflection->getFileName());
 
-        // Prova path relativo dal componente
         $fullPath = realpath($componentDir . '/' . $template);
         if ($fullPath && file_exists($fullPath)) {
-            $this->addTemplatePath(dirname($fullPath)); // Registra directory
-            return basename($fullPath); // ← SOLO NOME!
+            $this->addTemplatePath(dirname($fullPath));
+            return basename($fullPath);
         }
 
-        // Fallback globali
         $templateName = basename($template);
         foreach ($this->templatePaths as $basePath) {
             $fullPath = realpath($basePath . '/' . $templateName);
             if ($fullPath && file_exists($fullPath)) {
-                return $templateName; // ← SOLO NOME!
+                return $templateName;
             }
         }
 
         throw new RuntimeException("Template '{$template}' not found for {$componentClass}");
     }
 
-    /**
-     * @throws SyntaxError
-     * @throws ReflectionException
-     * @throws RuntimeError
-     * @throws LoaderError
-     */
     public function renderRoot(string $selector, array $data = []): string
     {
         $entry = $this->registry->get($selector);
@@ -85,53 +74,70 @@ class Renderer
             throw new RuntimeException("Component {$selector} not found");
         }
 
-        $instance = new $entry['class']();
-        $this->injectData($instance, $data);
-        return $this->renderInstance($instance, $entry['config']);
+        $proxy = new ComponentProxy($entry['class'], $entry['config']);
+        $this->injectData($proxy, $data);
+
+        $html = $this->renderInstance($proxy);
+
+        Injector::exitScope();
+
+        return $html;
     }
 
     /**
-     * @throws SyntaxError
      * @throws ReflectionException
-     * @throws RuntimeError
-     * @throws LoaderError
      */
-    private function renderInstance(object $component, Component $config): string
+    public function renderComponent(string $selector, array $bindings = []): string
     {
-        if (!$config->template) {
-            throw new RuntimeException("Component {$config->selector} has no template");
+        $entry = $this->registry->get($selector);
+        if (!$entry) {
+            return "<!-- Component {$selector} not found -->";
         }
 
-        //  OTTIENI NOME RELATIVO e registra path
-        $templateName = $this->resolveTemplatePath(get_class($component), $config->template);
+        $parentScope = Injector::getCurrentScope();
+        $parentId = $parentScope ? $parentScope->getId() : 'null';
+        $parentName = $parentScope && isset($parentScope->instance) ? basename(str_replace('\\', '/', get_class($parentScope->instance))) : 'null';
 
-        $templateData = $this->extractComponentData($component);
-        $templateData['__component'] = [
-            'selector' => $config->selector,
-            'meta' => $config->meta ?? []
-        ];
+
+        $proxy = new ComponentProxy($entry['class'], $entry['config'], $parentScope);
+
+        $this->applyInputBindings($proxy->instance, $bindings);
+
+        $html = $this->renderInstance($proxy);
+
+        if ($parentScope) {
+            Injector::enterScope($parentScope);
+        } else {
+            Injector::exitScope();
+        }
+
+        return $html;
+    }
+
+    private function renderInstance(ComponentProxy $proxy): string
+    {
+        Injector::enterScope($proxy);
+
+        $config = $proxy->getConfig();
+        $templateName = $this->resolveTemplatePath($proxy->instance::class, $config->template);
+        $templateData = $this->extractComponentData($proxy);
 
         $html = $this->twig->render($templateName, $templateData);
 
-        // 🔥 CSS GLOBALI PURI!
         if (!empty($config->styles)) {
-            $cssContent = $this->loadStyles(get_class($component), $config->styles);
+            $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
             $html = $this->injectGlobalStyles($html, $cssContent);
         }
 
         return $html;
     }
 
-    /**
-     * Carica array di CSS files
-     * @throws ReflectionException
-     */
     private function loadStyles(string $componentClass, array $styles): string
     {
         $reflection = new ReflectionClass($componentClass);
         $componentDir = dirname($reflection->getFileName());
-
         $cssContent = '';
+
         foreach ($styles as $styleFile) {
             $cssPath = realpath($componentDir . '/' . $styleFile);
             if (!$cssPath || !file_exists($cssPath)) {
@@ -143,47 +149,16 @@ class Renderer
         return $cssContent;
     }
 
-    /**
-     * Inietta CSS globale nel <head> - NO SCOPE!
-     */
     private function injectGlobalStyles(string $html, string $css): string
     {
         $styleId = 'global-styles-' . uniqid();
-        $styleTag = "<style id=\"{$styleId}\">\n{$css}\n</style>";
+        $styleTag = "<style id=\"{$styleId}\">{$css}</style>";
 
-        // Inietta nel primo <head>
         if (stripos($html, '<head>') !== false) {
-            return preg_replace('/<\/head>/i', $styleTag . '</head>', $html, 1);
+            return preg_replace('/<\\/head>/i', $styleTag . '</head>', $html, 1);
         }
 
         return $styleTag . $html;
-    }
-
-    // ... RESTO IDENTICO (renderComponent, applyInputBindings, etc.)
-
-    /**
-     * @throws SyntaxError
-     * @throws ReflectionException
-     * @throws RuntimeError
-     * @throws LoaderError
-     */
-    public function renderComponent(string $selector, array $bindings = []): string
-    {
-        $entry = $this->registry->get($selector);
-        if (!$entry) {
-            return "<!-- Component {$selector} not found -->";
-        }
-
-        $instance = new $entry['class']();
-        $this->applyInputBindings($instance, $bindings);
-        return $this->renderInstance($instance, $entry['config']);
-    }
-
-    private function registerCustomFunctions(): void
-    {
-        $this->twig->addFunction(new TwigFunction('component', [$this, 'renderComponent'], ['is_safe' => ['html']]));
-        $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
-        $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
     }
 
     private function applyInputBindings(object $component, array $bindings): void
@@ -195,15 +170,16 @@ class Renderer
 
             $input = $inputAttr->newInstance();
             $name = $input->alias ?? $prop->getName();
-
             if (!array_key_exists($name, $bindings)) continue;
 
+            $prop->setAccessible(true);
             $prop->setValue($component, $bindings[$name]);
         }
     }
 
-    private function injectData(object $component, array $data): void
+    private function injectData(ComponentProxy $proxy, array $data): void
     {
+        $component = $proxy->instance;
         foreach ($data as $key => $value) {
             if (property_exists($component, $key)) {
                 $component->$key = $value;
@@ -211,26 +187,32 @@ class Renderer
         }
     }
 
-    /**
-     * @throws ReflectionException
-     */
-    private function extractComponentData(object $component): array
+    private function extractComponentData(ComponentProxy $proxy): array
     {
         $data = [];
-        $reflection = new ReflectionObject($component);
+        $instance = $proxy->instance;
+        $reflection = new ReflectionObject($instance);
 
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
-            $data[$prop->getName()] = $prop->getValue($component);
+            $data[$prop->getName()] = $prop->getValue($instance);
         }
 
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (str_starts_with($method->getName(), 'get') && $method->getNumberOfParameters() === 0) {
+            if (str_starts_with($method->getName(), 'get') &&
+                $method->getNumberOfRequiredParameters() === 0) {
                 $propertyName = lcfirst(substr($method->getName(), 3));
-                $data[$propertyName] = $method->invoke($component);
+                $data[$propertyName] = $method->invoke($instance);
             }
         }
 
         return $data;
+    }
+
+    private function registerCustomFunctions(): void
+    {
+        $this->twig->addFunction(new TwigFunction('component', [$this, 'renderComponent'], ['is_safe' => ['html']]));
+        $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
+        $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
     }
 
     public function getRouteData(?string $key = null): mixed
@@ -250,9 +232,6 @@ class Renderer
         return $this->twig;
     }
 
-    /**
-     * @throws LoaderError
-     */
     public function addTemplatePath(string $path, ?string $namespace = null): void
     {
         $realPath = realpath($path);
@@ -262,7 +241,6 @@ class Renderer
 
         $this->templatePaths[] = $realPath;
 
-        // 🔥 AGGIORNA LOADER DYNAMICAMENTE!
         $loader = $this->twig->getLoader();
         if ($loader instanceof FilesystemLoader) {
             if ($namespace) {

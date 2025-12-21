@@ -1,13 +1,17 @@
 <?php
+
 namespace Shared\FeatureCard;
 
 use App\Component\Component;
 use App\Component\Input;
+use App\Injector\Inject;
+use App\Services\AppService;
 
 #[Component(
     selector: 'app-feature-card',
     template: 'feature-card.html.twig',
-    styles: ['feature-card.css']
+    styles: ['feature-card.css'],
+    providers: [AppService::class]
 )]
 class FeatureCardComponent
 {
@@ -32,9 +36,16 @@ class FeatureCardComponent
     #[Input]
     public int $index = 0;
 
+    #[Inject] private AppService $appService;
+
+    public function getServiceCount(): int
+    {
+        return count($this->appService->getItems());
+    }
+
     public function getBorderClass(): string
     {
-        return match($this->color) {
+        return match ($this->color) {
             'blue' => 'border-blue',
             'purple' => 'border-purple',
             'green' => 'border-green',
@@ -45,7 +56,7 @@ class FeatureCardComponent
 
     public function getIconColor(): string
     {
-        return match($this->color) {
+        return match ($this->color) {
             'blue' => '#3b82f6',
             'purple' => '#8b5cf6',
             'green' => '#10b981',

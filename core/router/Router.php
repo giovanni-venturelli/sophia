@@ -4,6 +4,7 @@ namespace App\Router;
 
 use App\Component\ComponentRegistry;
 use App\Component\Renderer;
+use function call_user_func;
 
 class Router
 {
@@ -67,7 +68,7 @@ class Router
 
         // Callback (API)
         if (isset($route['callback']) && is_callable($route['callback'])) {
-            \call_user_func($route['callback'], $params, $route);
+            call_user_func($route['callback'], $params, $route);
             return;
         }
 

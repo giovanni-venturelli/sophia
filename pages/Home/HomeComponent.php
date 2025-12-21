@@ -7,6 +7,8 @@ namespace App\Pages\Home;
 
 use App\Component\Component;
 use App\Component\Input;
+use App\Injector\Inject;
+use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;
 use Shared\Footer\FooterComponent;
 use Shared\Header\HeaderComponent;
@@ -14,16 +16,18 @@ use Shared\Header\HeaderComponent;
 #[Component(
     selector: 'app-home',
     template: 'home.html.twig',
-    styles: ['home.css'],
     imports: [
         HeaderComponent::class,
         FooterComponent::class,
         FeatureCardComponent::class
-    ]
+    ],
+    styles: ['home.css'],
+    providers: [AppService::class]
 )]
 class HomeComponent
 {
     #[Input] public string $id = '';
+    #[Inject] private AppService $appService;
     public string $pageTitle = 'Welcome to Our App';
     public string $subtitle = 'Build amazing things with PHP and Twig';
     public array $features = [];
@@ -33,6 +37,12 @@ class HomeComponent
     {;
         $this->features = $this->loadFeatures();
         $this->stats = $this->loadStats();
+    }
+
+
+    public function onInit(): void
+    {
+        $this->appService->addItems(['item1', 'item2', 'item3']);
     }
 
     private function loadFeatures(): array
@@ -100,5 +110,9 @@ class HomeComponent
         } else {
             return 'Good evening! 🌙';
         }
+    }
+    public function getServiceCount(): int
+    {
+        return count($this->appService->getItems());
     }
 }
