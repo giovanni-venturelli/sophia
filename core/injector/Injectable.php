@@ -7,6 +7,7 @@
 
 namespace App\Injector;
 
+
 use Attribute;
 
 #[Attribute(Attribute::TARGET_CLASS)]

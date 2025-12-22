@@ -9,7 +9,8 @@
       <sourceFolder url="file://$MODULE_DIR$/Shared" isTestSource="false" packagePrefix="Shared\" />
       <sourceFolder url="file://$MODULE_DIR$/core/injector" isTestSource="false" packagePrefix="App\Injector\" />
       <sourceFolder url="file://$MODULE_DIR$/services" isTestSource="false" packagePrefix="App\Services\" />
-      <sourceFolder url="file://$MODULE_DIR$/spec" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/core/database" isTestSource="false" packagePrefix="App\Database\" />
+      <sourceFolder url="file://$MODULE_DIR$/core/database/drivers" isTestSource="false" packagePrefix="App\Database\Drivers\" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/composer" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/deprecation-contracts" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/polyfill-ctype" />
