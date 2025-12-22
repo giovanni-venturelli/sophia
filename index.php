@@ -2,12 +2,23 @@
 
 use App\Component\ComponentRegistry;
 use App\Component\Renderer;
+use App\Database\ConnectionService;
+use App\Injector\Injector;
 use App\Router\Router;
 
 require __DIR__ . '/vendor/autoload.php';
 
-$registry = ComponentRegistry::getInstance();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
+$dbConfig = file_exists('config/database.php')
+    ? require 'config/database.php'
+    : ['driver' => 'sqlite', 'credentials' => ['database' => 'database/app.db']];
+
+$dbService = Injector::inject(ConnectionService::class);  // Auto-creato da #[Injectable]
+$dbService->configure($dbConfig);
+
+$registry = ComponentRegistry::getInstance();
 $templatesPath = __DIR__ . '/pages';
 $cachePath     = __DIR__ . '/cache/twig';
 

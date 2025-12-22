@@ -9,7 +9,9 @@
             "App\\Injector\\": "core/injector/",
             "App\\Pages\\": "pages/",
             "Shared\\": "Shared/",
-            "App\\Services\\": "services"
+            "App\\Services\\": "services",
+            "App\\Database\\": "core/database",
+            "App\\Database\\Drivers\\": "core/database/drivers"
         }
     },
     "authors": [
@@ -19,6 +21,9 @@
     ],
     "require": {
         "twig/twig": "^3.22",
-        "vlucas/phpdotenv": "^5.6"
+        "vlucas/phpdotenv": "^5.6",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-pdo_sqlite": "*"
     }
 }

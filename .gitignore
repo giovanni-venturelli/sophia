@@ -5,3 +5,5 @@
 cache
 .vendor
 composer.lock
+./.env
+.env

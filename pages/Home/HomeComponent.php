@@ -34,7 +34,7 @@ class HomeComponent
     public array $stats = [];
 
     public function __construct()
-    {;
+    {
         $this->features = $this->loadFeatures();
         $this->stats = $this->loadStats();
     }
@@ -89,6 +89,7 @@ class HomeComponent
         ];
     }
 
+
     public function getFeaturesCount(): int
     {
         return count($this->features);
@@ -111,6 +112,7 @@ class HomeComponent
             return 'Good evening! 🌙';
         }
     }
+
     public function getServiceCount(): int
     {
         return count($this->appService->getItems());
