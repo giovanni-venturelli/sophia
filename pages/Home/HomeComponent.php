@@ -7,7 +7,6 @@ namespace App\Pages\Home;
 
 use App\Component\Component;
 use App\Component\Input;
-use App\Database\ConnectionService;
 use App\Injector\Inject;
 use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;
