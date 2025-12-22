@@ -4,6 +4,7 @@ namespace App\Router;
 
 use App\Component\ComponentRegistry;
 use App\Component\Renderer;
+use App\Router\Models\MiddlewareInterface;
 use function call_user_func;
 
 class Router
@@ -41,7 +42,7 @@ class Router
     }
 
     /**
-     * 🔥 DISPATCH ULTRA-SEMPLICE - Lazy registration pura!
+     * 🔥 DISPATCH con supporto Guards/Middleware
      */
     public function dispatch(): void
     {
@@ -58,6 +59,15 @@ class Router
         $this->currentParams = $params;
         $this->currentRouteData = $route['data'] ?? [];
 
+        // 🔥 GUARDS/MIDDLEWARE (canActivate)
+        if (!empty($route['canActivate'])) {
+            if (!$this->executeGuards($route['canActivate'])) {
+                // Guard ha bloccato l'accesso
+//                $this->handleUnauthorized($route);
+                return;
+            }
+        }
+
         // Redirect
         if (isset($route['redirectTo'])) {
             $target = $this->normalizePath($route['redirectTo']);
@@ -72,7 +82,7 @@ class Router
             return;
         }
 
-        // 🔥 COMPONENT RENDERING - ZERO CONFIG!
+        // 🔥 COMPONENT RENDERING
         if (isset($route['component'])) {
             $componentClass = $route['component'];
 
@@ -88,7 +98,7 @@ class Router
                 return;
             }
 
-            // 🔥 LAZY REGISTRATION SEMPLICE (no options!)
+            // 🔥 LAZY REGISTRATION
             $selector = $this->componentRegistry->lazyRegister($componentClass);
 
             // Dati route
@@ -101,6 +111,49 @@ class Router
         }
 
         $this->handleNotFound();
+    }
+
+    /**
+     * 🔥 Esegue i guards della route
+     *
+     * @param array $guards Array di classi guard (devono implementare MiddlewareInterface)
+     * @return bool True se tutti i guards passano, false altrimenti
+     */
+    private function executeGuards(array $guards): bool
+    {
+        foreach ($guards as $guardClass) {
+            // Se è una stringa, istanzia la classe
+            if (is_string($guardClass)) {
+                if (!class_exists($guardClass)) {
+                    throw new \RuntimeException("Guard class '{$guardClass}' not found");
+                }
+
+                $guard = new $guardClass();
+
+                // Verifica che implementi l'interfaccia
+                if (!$guard instanceof MiddlewareInterface) {
+                    throw new \RuntimeException(
+                        "Guard '{$guardClass}' must implement " . MiddlewareInterface::class
+                    );
+                }
+            }
+            // Se è già un'istanza, usala direttamente
+            elseif ($guardClass instanceof MiddlewareInterface) {
+                $guard = $guardClass;
+            }
+            else {
+                throw new \RuntimeException("Invalid guard type");
+            }
+
+            // Esegui il guard
+            if (!$guard->handle()) {
+                // Guard ha fallito - blocca l'accesso
+                return false;
+            }
+        }
+
+        // Tutti i guards sono passati
+        return true;
     }
 
     /**
@@ -202,7 +255,7 @@ class Router
         return '/' . ltrim($path, '/');
     }
 
-    // 🔍 MATCHING ENGINE (inalterato)
+    // 🔍 MATCHING ENGINE
     private function getCurrentPath(): string
     {
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
@@ -250,7 +303,14 @@ class Router
                     $match = $this->matchPathWithParams($fullChildPath, $path);
                     if ($match) {
                         [$params] = $match;
+
+                        // 🔥 MERGE canActivate: parent + child
+                        $parentGuards = $route['canActivate'] ?? [];
+                        $childGuards = $child['canActivate'] ?? [];
+
                         $mergedRoute = array_merge($route, $child);
+                        $mergedRoute['canActivate'] = array_merge($parentGuards, $childGuards);
+
                         unset($mergedRoute['children']);
                         return [$mergedRoute, $params];
                     }
