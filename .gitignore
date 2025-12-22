@@ -1,6 +1,7 @@
 /vendor/
 
 .idea
+.idea/
 .cache
 cache
 .vendor
