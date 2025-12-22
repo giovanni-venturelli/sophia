@@ -7,6 +7,7 @@ namespace App\Pages\Home;
 
 use App\Component\Component;
 use App\Component\Input;
+use App\Database\ConnectionService;
 use App\Injector\Inject;
 use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;
@@ -28,6 +29,7 @@ class HomeComponent
 {
     #[Input] public string $id = '';
     #[Inject] private AppService $appService;
+    #[Inject] private ConnectionService $connectionService;
     public string $pageTitle = 'Welcome to Our App';
     public string $subtitle = 'Build amazing things with PHP and Twig';
     public array $features = [];
