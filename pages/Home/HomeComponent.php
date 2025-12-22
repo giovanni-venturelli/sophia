@@ -9,6 +9,7 @@ use App\Component\Component;
 use App\Component\Input;
 use App\Database\ConnectionService;
 use App\Injector\Inject;
+use App\Pages\Home\Models\Post;
 use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;
 use Shared\Footer\FooterComponent;
@@ -47,6 +48,9 @@ class HomeComponent
         $this->appService->addItems(['item1', 'item2', 'item3']);
     }
 
+    public function getPosts(){
+        return Post::all();
+    }
     private function loadFeatures(): array
     {
         return [
