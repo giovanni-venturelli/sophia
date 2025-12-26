@@ -21,14 +21,23 @@ class Renderer
     private ComponentRegistry $registry;
     private array $templatePaths = [];
 
+    // 🔥 NUOVO: Accumulatori per risorse globali
+    private array $globalStyles = [];
+    private array $globalScripts = [];
+    private array $metaTags = [];
+    private string $pageTitle = '';
+    private string $language = 'en';
+
     public function __construct(
         ComponentRegistry $registry,
-        string $templatesPath,
-        string $cachePath = '',
-        bool $debug = false
-    ) {
+        string            $templatesPath,
+        string            $cachePath = '',
+        string            $language = 'en',
+        bool              $debug = false
+    )
+    {
         $this->registry = $registry;
-
+        $this->language = $language;
         $loader = new FilesystemLoader();
         $this->twig = new Environment($loader, [
             'cache' => $cachePath,
@@ -63,6 +72,9 @@ class Renderer
         throw new RuntimeException("Template '{$template}' not found for {$componentClass}");
     }
 
+    /**
+     * 🔥 NUOVO: Renderizza con layout HTML completo
+     */
     public function renderRoot(string $selector, array $data = []): string
     {
         $entry = $this->registry->get($selector);
@@ -70,18 +82,69 @@ class Renderer
             throw new RuntimeException("Component {$selector} not found");
         }
 
+        // Reset accumulatori
+        $this->globalStyles = [];
+        $this->globalScripts = [];
+        $this->metaTags = [];
+        $this->pageTitle = '';
+
         $proxy = new ComponentProxy($entry['class'], $entry['config']);
         $this->injectData($proxy, $data);
 
-        $html = $this->renderInstance($proxy);
+        // Renderizza il componente (questo raccoglie styles/scripts)
+        $bodyContent = $this->renderInstance($proxy);
 
         Injector::exitScope();
+
+        // 🔥 Costruisci HTML completo
+        return $this->buildFullHtml($bodyContent);
+    }
+
+    /**
+     * 🔥 NUOVO: Costruisce la struttura HTML completa
+     */
+    private function buildFullHtml(string $bodyContent): string
+    {
+        $html = '<!DOCTYPE html>' . "\n";
+        $html .= '<html lang="' . $this->language . '">' . "\n";
+        $html .= '<head>' . "\n";
+        $html .= '    <meta charset="UTF-8">' . "\n";
+        $html .= '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' . "\n";
+
+        // Title
+        if ($this->pageTitle) {
+            $html .= '    <title>' . htmlspecialchars($this->pageTitle) . '</title>' . "\n";
+        }
+
+        // Meta tags
+        foreach ($this->metaTags as $meta) {
+            $html .= '    ' . $meta . "\n";
+        }
+
+        // 🔥 Global Styles (raccolti da tutti i componenti)
+        foreach ($this->globalStyles as $styleId => $css) {
+            $html .= '    <style id="' . $styleId . '">' . $css . '</style>' . "\n";
+        }
+
+        $html .= '</head>' . "\n";
+        $html .= '<body>' . "\n";
+
+        // 🔥 Body content (componenti renderizzati)
+        $html .= $bodyContent . "\n";
+
+        // 🔥 Global Scripts (alla fine del body)
+        foreach ($this->globalScripts as $scriptId => $js) {
+            $html .= '    <script id="' . $scriptId . '">' . $js . '</script>' . "\n";
+        }
+
+        $html .= '</body>' . "\n";
+        $html .= '</html>';
 
         return $html;
     }
 
     /**
-     * ðŸ”¥ AGGIORNATO: supporta slot content
+     * 🔥 AGGIORNATO: supporta slot content
      */
     public function renderComponent(string $selector, array $bindings = [], ?string $slotContent = null): string
     {
@@ -95,7 +158,7 @@ class Renderer
 
         $this->applyInputBindings($proxy->instance, $bindings);
 
-        // ðŸ”¥ SLOT INJECTION: inietta il contenuto degli slot nel componente
+        // 🔥 SLOT INJECTION: inietta il contenuto degli slot nel componente
         if ($slotContent !== null) {
             $this->injectSlotContent($proxy->instance, $slotContent);
         }
@@ -112,7 +175,7 @@ class Renderer
     }
 
     /**
-     * ðŸ”¥ NUOVO: Inietta il contenuto degli slot nel componente
+     * 🔥 NUOVO: Inietta il contenuto degli slot nel componente
      */
     private function injectSlotContent(object $component, string $slotContent): void
     {
@@ -126,7 +189,6 @@ class Renderer
             $slotConfig = $slotAttr->newInstance();
             $slotName = $slotConfig->name;
 
-            // Cerca il contenuto corrispondente
             $content = $slots[$slotName] ?? null;
 
             if ($content) {
@@ -137,11 +199,12 @@ class Renderer
     }
 
     /**
-     * ðŸ”¥ NUOVO: Parse del contenuto per estrarre gli slot
+     * 🔥 NUOVO: Parse del contenuto per estrarre gli slot
      */
-    private function parseSlotContent(string $content): array {
+    private function parseSlotContent(string $content): array
+    {
         $slots = [];
-        if (preg_match_all('/<slot\\s+name=[\"|\']([^\"|\']+)[\"|\']\\s*>(.*?)<\/slot>/s', $content, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/<slot\s+name=["|\']([^"|\']+)["|\']\\s*>(.*?)<\/slot>/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $slotName = trim($match[1]);
                 $slotHtml = trim($match[2]);
@@ -151,9 +214,9 @@ class Renderer
         return $slots;
     }
 
-
-
-
+    /**
+     * 🔥 AGGIORNATO: Renderizza senza iniettare stili inline
+     */
     private function renderInstance(ComponentProxy $proxy): string
     {
         Injector::enterScope($proxy);
@@ -164,13 +227,18 @@ class Renderer
 
         $html = $this->twig->render($templateName, $templateData);
 
+        // 🔥 Raccogli styles globalmente invece di iniettarli inline
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
-            $html = $this->injectGlobalStyles($html, $cssContent);
+            $styleId = 'style-' . uniqid();
+            $this->globalStyles[$styleId] = $cssContent;
         }
+
+        // 🔥 Raccogli scripts globalmente
         if (!empty($config->scripts)) {
             $jsContent = $this->loadScripts($proxy->instance::class, $config->scripts);
-            $html = $this->injectGlobalScripts($html, $jsContent);
+            $scriptId = 'script-' . uniqid();
+            $this->globalScripts[$scriptId] = $jsContent;
         }
 
         return $html;
@@ -192,6 +260,7 @@ class Renderer
 
         return $cssContent;
     }
+
     private function loadScripts(string $componentClass, array $scripts): string
     {
         $reflection = new ReflectionClass($componentClass);
@@ -203,39 +272,10 @@ class Renderer
             if (!$jsPath || !file_exists($jsPath)) {
                 throw new RuntimeException("Script '{$scriptFile}' not found for {$componentClass}");
             }
-            $jsContent .= file_get_contents($jsPath);
+            $jsContent .= file_get_contents($jsPath) . "\n";
         }
 
         return $jsContent;
-    }
-
-    private function injectGlobalStyles(string $html, string $css): string
-    {
-        $styleId = 'global-styles-' . uniqid();
-        $styleTag = "<style id=\"{$styleId}\">{$css}</style>";
-
-        if (stripos($html, '<head>') !== false) {
-            return preg_replace('/<\/head>/i', $styleTag . '</head>', $html, 1);
-        }
-
-        return $styleTag . $html;
-    }
-
-    private function injectGlobalScripts(string $html, string $js): string
-    {
-        $scriptId = 'script-' . uniqid();
-        $scriptTag = "<script id=\"{$scriptId}\">{$js}</script>";
-
-        if (stripos($html, '</body>') !== false) {
-            return preg_replace(
-                '/<\/body>/i',
-                $scriptTag . '</body>',
-                $html,
-                1
-            );
-        }
-
-        return $scriptTag . $html;
     }
 
     private function applyInputBindings(object $component, array $bindings): void
@@ -265,7 +305,7 @@ class Renderer
     }
 
     /**
-     * ðŸ”¥ AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot
+     * 🔥 AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot
      */
     private function extractComponentData(ComponentProxy $proxy): array
     {
@@ -273,14 +313,14 @@ class Renderer
         $instance = $proxy->instance;
         $reflection = new ReflectionObject($instance);
 
-        // ðŸ”¥ AUTO-GENERATE: slot helpers automatici (has* e slot functions)
+        // 🔥 AUTO-GENERATE: slot helpers automatici (has* e slot functions)
         $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
         $data = array_merge($data, $slotHelpers);
 
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
             $value = $prop->getValue($instance);
 
-            // ðŸ”¥ Se Ã¨ SlotContent, estrai l'HTML o stringa vuota
+            // 🔥 Se è SlotContent, estrai l'HTML o stringa vuota
             if ($value instanceof SlotContent) {
                 $data[$prop->getName()] = $value->html;
             } else {
@@ -300,10 +340,7 @@ class Renderer
     }
 
     /**
-     * ðŸ”¥ NUOVO: Genera automaticamente gli helper per gli slot
-     * Crea:
-     * - hasHeader, hasFooter, hasContent, etc. (boolean)
-     * - Funzioni slot() per rendering con contesto
+     * 🔥 NUOVO: Genera automaticamente gli helper per gli slot
      */
     private function generateSlotHelpers(ReflectionObject $reflection, object $instance): array
     {
@@ -320,7 +357,6 @@ class Renderer
             $propName = $prop->getName();
             $baseName = str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName;
 
-            // ðŸ”¥ FIX: Helper has + slot reference
             $helpers['has' . ucfirst($baseName)] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
 
             if ($slotContent instanceof SlotContent) {
@@ -328,29 +364,38 @@ class Renderer
             }
         }
 
-        // ðŸ”¥ FIX CRITICO: Contesto corretto per slot()
-        $helpers['slot'] = function(string $name, array $context = []) use ($slotObjects) {
+        $helpers['slot'] = function (string $name, array $context = []) use ($slotObjects) {
             $slotContent = $slotObjects[$name] ?? null;
             if (!$slotContent || $slotContent->isEmpty()) return '';
-            return $slotContent->render($context);  // â† PASSA CONTESTO DEL TEMPLATE
+            return $slotContent->render($context);
         };
 
         return $helpers;
     }
 
-
     private function registerCustomFunctions(): void
     {
-        $this->twig->addFunction(new TwigFunction('component', function(string $selector, array $bindings = [], ?string $slotContent = null) {
+        $this->twig->addFunction(new TwigFunction('component', function (string $selector, array $bindings = [], ?string $slotContent = null) {
             return $this->renderComponent($selector, $bindings, $slotContent);
         }, ['is_safe' => ['html']]));
-        $this->twig->addFunction(new TwigFunction('slot', function(array $twigContext, string $name, array $slotContext = []) {
-            // Recupera la closure slot dal context del template
+
+        $this->twig->addFunction(new TwigFunction('slot', function (array $twigContext, string $name, array $slotContext = []) {
             if (isset($twigContext['slot']) && is_callable($twigContext['slot'])) {
                 return $twigContext['slot']($name, $slotContext);
             }
             return '';
         }, ['is_safe' => ['html'], 'needs_context' => true]));
+
+        // 🔥 NUOVO: Funzione per settare il title della pagina
+        $this->twig->addFunction(new TwigFunction('set_title', function (string $title) {
+            $this->pageTitle = $title;
+        }));
+
+        // 🔥 NUOVO: Funzione per aggiungere meta tags
+        $this->twig->addFunction(new TwigFunction('add_meta', function (string $name, string $content) {
+            $this->metaTags[] = '<meta name="' . htmlspecialchars($name) . '" content="' . htmlspecialchars($content) . '">';
+        }));
+
         $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
         $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
     }

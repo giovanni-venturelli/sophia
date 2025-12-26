@@ -26,6 +26,7 @@ $renderer = new Renderer(
     $registry,
     $templatesPath,
     $cachePath,
+    'it',
     true
 );
 
