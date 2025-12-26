@@ -24,6 +24,7 @@ class Renderer
     // 🔥 NUOVO: Accumulatori per risorse globali
     private array $globalStyles = [];
     private array $globalScripts = [];
+    private array $globalMetaTags = [];
     private array $componentStyles = [];
     private array $componentScripts = [];
     private array $metaTags = [];
@@ -85,6 +86,14 @@ class Renderer
         $scriptId = 'globalScript-' . uniqid();
         $this->globalScripts[$scriptId] = $js;;
     }
+    public function addGlobalMetaTags(array $tags): void
+    {
+        foreach($tags as $tag) {
+
+            $tagId = 'globalTag-' . uniqid();
+            $this->globalMetaTags[$tagId] = $tag;
+        }
+    }
     /**
      * 🔥 NUOVO: Renderizza con layout HTML completo
      */
@@ -132,6 +141,9 @@ class Renderer
         // Meta tags
         foreach ($this->metaTags as $meta) {
             $html .= '    ' . $meta . "\n";
+        }
+        foreach ($this->globalMetaTags as $tag) {
+            $html .= '   <meta name="' . htmlspecialchars($tag->name) . '" content="' . htmlspecialchars($tag->content) . '"> \n' ;
         }
 
         // 🔥 Global Styles
