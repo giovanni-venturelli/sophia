@@ -47,6 +47,95 @@ class Router
     public function dispatch(): void
     {
         $uri = $this->getCurrentPath();
+
+        // 1) Prova nested route chain (layout + children)
+        $chainMatch = $this->matchRouteChain($uri);
+        if ($chainMatch) {
+            [$chain, $params] = $chainMatch;
+
+            // Unisci i dati e i guards lungo la catena
+            $mergedData = [];
+            $mergedGuards = [];
+            $redirectTo = null;
+            $callback = null;
+
+            foreach ($chain as $node) {
+                if (isset($node['data']) && is_array($node['data'])) {
+                    $mergedData = array_merge($mergedData, $node['data']);
+                }
+                if (!empty($node['canActivate'])) {
+                    $mergedGuards = array_merge($mergedGuards, $node['canActivate']);
+                }
+                if (isset($node['redirectTo'])) {
+                    $redirectTo = $node['redirectTo'];
+                }
+                if (isset($node['callback']) && is_callable($node['callback'])) {
+                    $callback = $node['callback'];
+                }
+            }
+
+            $this->currentRoute = end($chain) ?: null;
+            $this->currentParams = $params;
+            $this->currentRouteData = $mergedData;
+
+            // Guards
+            if (!empty($mergedGuards)) {
+                if (!$this->executeGuards($mergedGuards)) {
+                    return;
+                }
+            }
+
+            // Redirect
+            if ($redirectTo) {
+                $target = $this->normalizePath($redirectTo);
+                $url = $this->basePath . '/' . $target;
+                header('Location: ' . $url);
+                exit;
+            }
+
+            // Callback
+            if ($callback) {
+                call_user_func($callback, $params, end($chain));
+                return;
+            }
+
+            // Rendering bottom-up: leaf -> root, usando <router-outlet>
+            if ($this->renderer && $this->componentRegistry) {
+                $rendered = null;
+                // Trova l'indice del componente più alto (top) nella catena
+                $topIndex = null;
+                for ($i = 0; $i < count($chain); $i++) {
+                    if (isset($chain[$i]['component'])) { $topIndex = $i; break; }
+                }
+                for ($i = count($chain) - 1; $i >= 0; $i--) {
+                    $node = $chain[$i];
+                    if (!isset($node['component'])) {
+                        continue;
+                    }
+                    $componentClass = $node['component'];
+                    if (!class_exists($componentClass)) {
+                        http_response_code(500);
+                        echo "Component '{$componentClass}' not found";
+                        return;
+                    }
+                    $selector = $this->componentRegistry->lazyRegister($componentClass);
+                    $data = array_merge($this->currentParams, [ 'routeData' => $this->currentRouteData ]);
+
+                    $slotContent = $rendered !== null ? '<router-outlet name="outlet">' . $rendered . '</router-outlet>' : null;
+
+                    if ($i === $topIndex) {
+                        echo $this->renderer->renderRoot($selector, $data, $slotContent);
+                        return;
+                    } else {
+                        $rendered = $this->renderer->renderComponent($selector, $data, $slotContent);
+                    }
+                }
+                // Se non è stato trovato alcun componente, 404
+            }
+            // Se non renderizzato per qualche motivo, cade al fallback
+        }
+
+        // 2) Fallback: vecchio matching singolo
         $match = $this->matchRoute($uri);
 
         if (!$match) {
@@ -279,6 +368,46 @@ class Router
                 return $match;
             }
         }
+        return null;
+    }
+
+    /**
+     * 🔥 NUOVO: restituisce la catena completa (root→leaf) di una rotta annidata che matcha il path
+     * Ritorna [array $chain, array $params] oppure null se nessuna match
+     */
+    private function matchRouteChain(string $path): ?array
+    {
+        foreach ($this->routes as $route) {
+            $res = $this->matchNodeChain($route, $path, '');
+            if ($res) return $res;
+        }
+        return null;
+    }
+
+    private function matchNodeChain(array $node, string $requestPath, string $accumulated): ?array
+    {
+        $nodePath = $this->normalizePath($node['path'] ?? '');
+        $fullPath = trim(($accumulated !== '' ? ($accumulated . '/') : '') . $nodePath, '/');
+
+        // Prima cerca nei figli per ottenere il match più profondo
+        if (!empty($node['children']) && is_array($node['children'])) {
+            foreach ($node['children'] as $child) {
+                $res = $this->matchNodeChain($child, $requestPath, $fullPath);
+                if ($res) {
+                    [$chain, $params] = $res;
+                    array_unshift($chain, $node);
+                    return [$chain, $params];
+                }
+            }
+        }
+
+        // Altrimenti prova a matchare questo nodo come leaf
+        $match = $this->matchPathWithParams($fullPath, $requestPath);
+        if ($match) {
+            [$params] = $match;
+            return [[ $node ], $params];
+        }
+
         return null;
     }
 

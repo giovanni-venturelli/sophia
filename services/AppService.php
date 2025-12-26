@@ -3,7 +3,7 @@
 namespace App\Services;
 use App\Injector\Injectable;
 
-#[Injectable]  // ← Scoped per componente
+#[Injectable(providedIn: 'root')]  // Global singleton service
 class AppService {
     private array $items = [];
 
