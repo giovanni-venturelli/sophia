@@ -24,6 +24,7 @@ use Shared\Header\HeaderComponent;
         FeatureCardComponent::class
     ],
     styles: ['home.css'],
+    scripts: ['home.js'],
     providers: [AppService::class]
 )]
 class HomeComponent

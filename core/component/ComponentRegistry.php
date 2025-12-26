@@ -24,31 +24,21 @@ class ComponentRegistry {
      * Register a component class explicitly
      * @throws ReflectionException
      */
-    public function register(string $class): void {
-        if ($this->isRegistered($class)) return;
+    public function register(string $className): void {
+        $reflection = new ReflectionClass($className);
+        $componentAttr = $reflection->getAttributes(Component::class)[0] ?? null;
 
-        $ref = new ReflectionClass($class);
-        $attr = $ref->getAttributes(Component::class)[0] ?? null;
+        if (!$componentAttr) return;
 
-        if (!$attr) {
-            throw new ReflectionException("Class {$class} must have #[Component] attribute");
-        }
-
-        $config = $attr->newInstance();
-
-        // Salva il componente
+        $config = $componentAttr->newInstance();
         $this->components[$config->selector] = [
-            'class' => $class,
-            'config' => $config,
-            'reflection' => $ref,
-            'options' => []
+            'class' => $className,
+            'template' => $config->template,
+            'styles' => $config->styles,     // ← Array
+            'scripts' => $config->scripts,   // ← Array NUOVO
+            'providers' => $config->providers,
+            'imports' => $config->imports
         ];
-
-        // Auto-registration ricorsiva per imports
-        $imports = $this->getImportsFromComponentAttribute($class);
-        foreach ($imports as $importClass) {
-            $this->registerRecursive($importClass, []);
-        }
     }
 
     /**

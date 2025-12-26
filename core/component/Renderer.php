@@ -168,6 +168,10 @@ class Renderer
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
             $html = $this->injectGlobalStyles($html, $cssContent);
         }
+        if (!empty($config->scripts)) {
+            $jsContent = $this->loadScripts($proxy->instance::class, $config->scripts);
+            $html = $this->injectGlobalScripts($html, $jsContent);
+        }
 
         return $html;
     }
@@ -188,6 +192,22 @@ class Renderer
 
         return $cssContent;
     }
+    private function loadScripts(string $componentClass, array $scripts): string
+    {
+        $reflection = new ReflectionClass($componentClass);
+        $componentDir = dirname($reflection->getFileName());
+        $jsContent = '';
+
+        foreach ($scripts as $scriptFile) {
+            $jsPath = realpath($componentDir . '/' . $scriptFile);
+            if (!$jsPath || !file_exists($jsPath)) {
+                throw new RuntimeException("Script '{$scriptFile}' not found for {$componentClass}");
+            }
+            $jsContent .= file_get_contents($jsPath);
+        }
+
+        return $jsContent;
+    }
 
     private function injectGlobalStyles(string $html, string $css): string
     {
@@ -199,6 +219,23 @@ class Renderer
         }
 
         return $styleTag . $html;
+    }
+
+    private function injectGlobalScripts(string $html, string $js): string
+    {
+        $scriptId = 'script-' . uniqid();
+        $scriptTag = "<script id=\"{$scriptId}\">{$js}</script>";
+
+        if (stripos($html, '</body>') !== false) {
+            return preg_replace(
+                '/<\/body>/i',
+                $scriptTag . '</body>',
+                $html,
+                1
+            );
+        }
+
+        return $scriptTag . $html;
     }
 
     private function applyInputBindings(object $component, array $bindings): void

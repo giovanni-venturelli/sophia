@@ -13,6 +13,7 @@ class Component
         public string $template,
         public array $imports = [],
         public array $styles = [],
+        public array $scripts = [],
         public array $providers = [],  // Angular-style providers
         public array $meta = []
     ) {}
