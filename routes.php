@@ -22,14 +22,7 @@ $router->configure([
     [
         'path' => 'about',
         'component' => \App\Pages\About\AboutLayoutComponent::class,
-        'children' => [[
-            'path' => '',
-            'component' => AboutComponent::class,
-            'data' => [
-                'title' => 'About Us',
-                'description' => 'Welcome to our application',
-            ],
-        ]]
+        'children' => include __DIR__ . '/pages/About/routes.php'
     ],
 
     // Redirect
