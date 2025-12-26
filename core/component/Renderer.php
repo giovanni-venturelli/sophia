@@ -24,6 +24,8 @@ class Renderer
     // 🔥 NUOVO: Accumulatori per risorse globali
     private array $globalStyles = [];
     private array $globalScripts = [];
+    private array $componentStyles = [];
+    private array $componentScripts = [];
     private array $metaTags = [];
     private string $pageTitle = '';
     private string $language = 'en';
@@ -72,6 +74,17 @@ class Renderer
         throw new RuntimeException("Template '{$template}' not found for {$componentClass}");
     }
 
+
+    public function addGlobalStyle(string $css): void
+    {
+        $styleId = 'globalStyle-' . uniqid();
+        $this->globalStyles[$styleId] = $css;;
+    }
+    public function addGlobalScripts(string $js): void
+    {
+        $scriptId = 'globalScript-' . uniqid();
+        $this->globalScripts[$scriptId] = $js;;
+    }
     /**
      * 🔥 NUOVO: Renderizza con layout HTML completo
      */
@@ -83,8 +96,8 @@ class Renderer
         }
 
         // Reset accumulatori
-        $this->globalStyles = [];
-        $this->globalScripts = [];
+        $this->componentStyles = [];
+        $this->componentScripts = [];
         $this->metaTags = [];
         $this->pageTitle = '';
 
@@ -121,8 +134,11 @@ class Renderer
             $html .= '    ' . $meta . "\n";
         }
 
-        // 🔥 Global Styles (raccolti da tutti i componenti)
+        // 🔥 Global Styles
         foreach ($this->globalStyles as $styleId => $css) {
+            $html .= '    <link id="' . $styleId . '" rel="stylesheet" href="'.$css.'"></style>' . "\n";
+        }
+        foreach ($this->componentStyles as $styleId => $css) {
             $html .= '    <style id="' . $styleId . '">' . $css . '</style>' . "\n";
         }
 
@@ -132,8 +148,12 @@ class Renderer
         // 🔥 Body content (componenti renderizzati)
         $html .= $bodyContent . "\n";
 
-        // 🔥 Global Scripts (alla fine del body)
+        // 🔥 Global Scripts
         foreach ($this->globalScripts as $scriptId => $js) {
+            $html .= '    <script id="' . $scriptId . '" type="text/javascript" src="'.$js.'"></script>' . "\n";
+        }
+        // 🔥 Global Scripts (alla fine del body)
+        foreach ($this->componentScripts as $scriptId => $js) {
             $html .= '    <script id="' . $scriptId . '">' . $js . '</script>' . "\n";
         }
 
@@ -231,14 +251,14 @@ class Renderer
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
             $styleId = 'style-' . uniqid();
-            $this->globalStyles[$styleId] = $cssContent;
+            $this->componentStyles[$styleId] = $cssContent;
         }
 
         // 🔥 Raccogli scripts globalmente
         if (!empty($config->scripts)) {
             $jsContent = $this->loadScripts($proxy->instance::class, $config->scripts);
             $scriptId = 'script-' . uniqid();
-            $this->globalScripts[$scriptId] = $jsContent;
+            $this->componentScripts[$scriptId] = $jsContent;
         }
 
         return $html;

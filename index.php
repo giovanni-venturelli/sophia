@@ -29,8 +29,10 @@ $renderer = new Renderer(
     'it',
     true
 );
-
+$renderer->addGlobalStyle('/test-route/css/style.css');
+$renderer->addGlobalScripts('/test-route/js/scripts.js');
 $router = Router::getInstance();
+
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
 $router->setBasePath('/test-route');
