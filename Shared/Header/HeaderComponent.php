@@ -3,6 +3,8 @@ namespace Shared\Header;
 
 use App\Component\Component;
 use App\Component\Input;
+use App\Component\Slot;
+use App\Component\SlotContent;
 
 #[Component(
     selector: 'app-header',
@@ -13,6 +15,8 @@ class HeaderComponent
 {
     #[Input]
     public string $title = 'My App';
+    #[Slot(name: 'easyProjection')]
+    public ?SlotContent $easyProjection = null;
 
     public array $navigation = [];
 

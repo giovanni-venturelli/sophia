@@ -12,19 +12,15 @@ use ReflectionProperty;
 use RuntimeException;
 use Twig\Environment;
 use Twig\Error\LoaderError;
-use Twig\Error\RuntimeError;
-use Twig\Error\SyntaxError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
+
 class Renderer
 {
     private Environment $twig;
     private ComponentRegistry $registry;
     private array $templatePaths = [];
 
-    /**
-     * @throws LoaderError
-     */
     public function __construct(
         ComponentRegistry $registry,
         string $templatesPath,
@@ -85,9 +81,9 @@ class Renderer
     }
 
     /**
-     * @throws ReflectionException
+     * ðŸ”¥ AGGIORNATO: supporta slot content
      */
-    public function renderComponent(string $selector, array $bindings = []): string
+    public function renderComponent(string $selector, array $bindings = [], ?string $slotContent = null): string
     {
         $entry = $this->registry->get($selector);
         if (!$entry) {
@@ -95,13 +91,14 @@ class Renderer
         }
 
         $parentScope = Injector::getCurrentScope();
-        $parentId = $parentScope ? $parentScope->getId() : 'null';
-        $parentName = $parentScope && isset($parentScope->instance) ? basename(str_replace('\\', '/', get_class($parentScope->instance))) : 'null';
-
-
         $proxy = new ComponentProxy($entry['class'], $entry['config'], $parentScope);
 
         $this->applyInputBindings($proxy->instance, $bindings);
+
+        // ðŸ”¥ SLOT INJECTION: inietta il contenuto degli slot nel componente
+        if ($slotContent !== null) {
+            $this->injectSlotContent($proxy->instance, $slotContent);
+        }
 
         $html = $this->renderInstance($proxy);
 
@@ -113,6 +110,49 @@ class Renderer
 
         return $html;
     }
+
+    /**
+     * ðŸ”¥ NUOVO: Inietta il contenuto degli slot nel componente
+     */
+    private function injectSlotContent(object $component, string $slotContent): void
+    {
+        $slots = $this->parseSlotContent($slotContent);
+        $ref = new ReflectionObject($component);
+
+        foreach ($ref->getProperties() as $prop) {
+            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
+            if (!$slotAttr) continue;
+
+            $slotConfig = $slotAttr->newInstance();
+            $slotName = $slotConfig->name;
+
+            // Cerca il contenuto corrispondente
+            $content = $slots[$slotName] ?? null;
+
+            if ($content) {
+                $prop->setAccessible(true);
+                $prop->setValue($component, $content);
+            }
+        }
+    }
+
+    /**
+     * ðŸ”¥ NUOVO: Parse del contenuto per estrarre gli slot
+     */
+    private function parseSlotContent(string $content): array {
+        $slots = [];
+        if (preg_match_all('/<slot\\s+name=[\"|\']([^\"|\']+)[\"|\']\\s*>(.*?)<\/slot>/s', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $slotName = trim($match[1]);
+                $slotHtml = trim($match[2]);
+                $slots[$slotName] = new SlotContent($slotHtml, $slotName);
+            }
+        }
+        return $slots;
+    }
+
+
+
 
     private function renderInstance(ComponentProxy $proxy): string
     {
@@ -155,7 +195,7 @@ class Renderer
         $styleTag = "<style id=\"{$styleId}\">{$css}</style>";
 
         if (stripos($html, '<head>') !== false) {
-            return preg_replace('/<\\/head>/i', $styleTag . '</head>', $html, 1);
+            return preg_replace('/<\/head>/i', $styleTag . '</head>', $html, 1);
         }
 
         return $styleTag . $html;
@@ -187,14 +227,28 @@ class Renderer
         }
     }
 
+    /**
+     * ðŸ”¥ AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot
+     */
     private function extractComponentData(ComponentProxy $proxy): array
     {
         $data = [];
         $instance = $proxy->instance;
         $reflection = new ReflectionObject($instance);
 
+        // ðŸ”¥ AUTO-GENERATE: slot helpers automatici (has* e slot functions)
+        $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
+        $data = array_merge($data, $slotHelpers);
+
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
-            $data[$prop->getName()] = $prop->getValue($instance);
+            $value = $prop->getValue($instance);
+
+            // ðŸ”¥ Se Ã¨ SlotContent, estrai l'HTML o stringa vuota
+            if ($value instanceof SlotContent) {
+                $data[$prop->getName()] = $value->html;
+            } else {
+                $data[$prop->getName()] = $value;
+            }
         }
 
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
@@ -208,9 +262,58 @@ class Renderer
         return $data;
     }
 
+    /**
+     * ðŸ”¥ NUOVO: Genera automaticamente gli helper per gli slot
+     * Crea:
+     * - hasHeader, hasFooter, hasContent, etc. (boolean)
+     * - Funzioni slot() per rendering con contesto
+     */
+    private function generateSlotHelpers(ReflectionObject $reflection, object $instance): array
+    {
+        $helpers = [];
+        $slotObjects = [];
+
+        foreach ($reflection->getProperties() as $prop) {
+            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
+            if (!$slotAttr) continue;
+
+            $prop->setAccessible(true);
+            $slotContent = $prop->getValue($instance);
+
+            $propName = $prop->getName();
+            $baseName = str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName;
+
+            // ðŸ”¥ FIX: Helper has + slot reference
+            $helpers['has' . ucfirst($baseName)] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
+
+            if ($slotContent instanceof SlotContent) {
+                $slotObjects[$baseName] = $slotContent;
+            }
+        }
+
+        // ðŸ”¥ FIX CRITICO: Contesto corretto per slot()
+        $helpers['slot'] = function(string $name, array $context = []) use ($slotObjects) {
+            $slotContent = $slotObjects[$name] ?? null;
+            if (!$slotContent || $slotContent->isEmpty()) return '';
+            return $slotContent->render($context);  // â† PASSA CONTESTO DEL TEMPLATE
+        };
+
+        return $helpers;
+    }
+
+
     private function registerCustomFunctions(): void
     {
-        $this->twig->addFunction(new TwigFunction('component', [$this, 'renderComponent'], ['is_safe' => ['html']]));
+        $this->twig->addFunction(new TwigFunction('component', function(string $selector, array $bindings = [], ?string $slotContent = null) {
+            return $this->renderComponent($selector, $bindings, $slotContent);
+        }, ['is_safe' => ['html']]));
+        $this->twig->addFunction(new TwigFunction('slot', function(array $twigContext, string $name, array $slotContext = []) {
+            // Recupera la closure slot dal context del template
+            if (isset($twigContext['slot']) && is_callable($twigContext['slot'])) {
+                return $twigContext['slot']($name, $slotContext);
+            }
+            return '';
+        }, ['is_safe' => ['html'], 'needs_context' => true]));
         $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
         $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
     }

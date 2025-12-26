@@ -7,9 +7,17 @@
 
 </head>
 <body>
+{% set slotContent %}
+    <slot name="easyProjection">
+        <div style="color: red">this</div>
+        <div>is</div>
+        <div>a</div>
+        <div>test</div>
+    </slot>
+{% endset %}
 {{ component('app-header', {
     title: pageTitle
-}) }}
+}, slotContent) }}
 
 <section class="hero">
     <div class="container">
