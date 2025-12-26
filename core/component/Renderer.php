@@ -97,21 +97,28 @@ class Renderer
     /**
      * 🔥 NUOVO: Renderizza con layout HTML completo
      */
-    public function renderRoot(string $selector, array $data = []): string
+    public function renderRoot(string $selector, array $data = [], ?string $slotContent = null): string
     {
         $entry = $this->registry->get($selector);
         if (!$entry) {
             throw new RuntimeException("Component {$selector} not found");
         }
 
-        // Reset accumulatori
-        $this->componentStyles = [];
-        $this->componentScripts = [];
-        $this->metaTags = [];
-        $this->pageTitle = '';
+        // Reset accumulatori SOLO se non stiamo componendo una catena (nessuno slot passato)
+        if ($slotContent === null) {
+            $this->componentStyles = [];
+            $this->componentScripts = [];
+            $this->metaTags = [];
+            $this->pageTitle = '';
+        }
 
         $proxy = new ComponentProxy($entry['class'], $entry['config']);
         $this->injectData($proxy, $data);
+
+        // Inietta eventuale contenuto negli slot del root (per layout routing)
+        if ($slotContent !== null) {
+            $this->injectSlotContent($proxy->instance, $slotContent);
+        }
 
         // Renderizza il componente (questo raccoglie styles/scripts)
         $bodyContent = $this->renderInstance($proxy);
@@ -236,8 +243,17 @@ class Renderer
     private function parseSlotContent(string $content): array
     {
         $slots = [];
-        if (preg_match_all('/<slot\s+name=["|\']([^"|\']+)["|\']\\s*>(.*?)<\/slot>/s', $content, $matches, PREG_SET_ORDER)) {
+        // Supporto storico: <slot name="..."> ... </slot>
+        if (preg_match_all('/<slot\s+name=["\']([^"\']+)["\']\s*>(.*?)<\/slot>/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
+                $slotName = trim($match[1]);
+                $slotHtml = trim($match[2]);
+                $slots[$slotName] = new SlotContent($slotHtml, $slotName);
+            }
+        }
+        // Nuovo per router layouts: <router-outlet name="..."> ... </router-outlet>
+        if (preg_match_all('/<router-outlet\s+name=["\']([^"\']+)["\']\s*>(.*?)<\/router-outlet>/s', $content, $matches2, PREG_SET_ORDER)) {
+            foreach ($matches2 as $match) {
                 $slotName = trim($match[1]);
                 $slotHtml = trim($match[2]);
                 $slots[$slotName] = new SlotContent($slotHtml, $slotName);

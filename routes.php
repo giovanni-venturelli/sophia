@@ -21,14 +21,15 @@ $router->configure([
     ],
     [
         'path' => 'about',
+        'component' => \App\Pages\About\AboutLayoutComponent::class,
         'children' => [[
-            'path' => 'us',
+            'path' => '',
             'component' => AboutComponent::class,
             'data' => [
-                'title' => 'Home Page',
+                'title' => 'About Us',
                 'description' => 'Welcome to our application',
-            ],]
-        ]
+            ],
+        ]]
     ],
 
     // Redirect

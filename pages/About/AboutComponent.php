@@ -2,18 +2,21 @@
 namespace App\Pages\About;
 
 use App\Component\Component;
+use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;
 use Shared\Footer\FooterComponent;
 use Shared\Header\HeaderComponent;
 
 #[Component(
 selector: 'app-about',
-template: 'about.html.twig',
-imports: [
-HeaderComponent::class,
-FooterComponent::class,
-FeatureCardComponent::class
-]
+    template: 'about.html.twig',
+    imports: [
+    HeaderComponent::class,
+    FooterComponent::class,
+    FeatureCardComponent::class
+    ],
+    styles: ['about.css'],
+    providers: [AppService::class]
 )]
 class AboutComponent
 {
