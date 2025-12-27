@@ -1,6 +1,16 @@
 {
-    "name": "uomoe/test-route",
-    "type": "project",
+    "name": "giovanni-venturelli/sophia",
+    "type": "library",
+    "description": "Sophia is a lightweight component-based PHP framework with Twig.",
+    "license": "MIT",
+    "keywords": ["php", "framework", "component", "router", "twig", "angular-like"],
+    "require": {
+        "php": ">=8.1",
+        "twig/twig": "^3.22",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-pdo_sqlite": "*"
+    },
     "autoload": {
         "psr-4": {
             "Sophia\\Router\\": "core/router/",
@@ -8,23 +18,13 @@
             "Sophia\\Component\\": "core/component/",
             "Sophia\\Injector\\": "core/injector/",
             "Sophia\\Form\\": "core/form/",
-            "App\\Pages\\": "pages/",
-            "Shared\\": "Shared/",
-            "App\\Services\\": "services",
-            "Sophia\\Database\\": "core/database",
-            "Sophia\\Database\\Drivers\\": "core/database/drivers"
+            "Sophia\\Database\\": "core/database/",
+            "Sophia\\Database\\Drivers\\": "core/database/drivers/"
         }
     },
     "authors": [
         {
             "name": "Giovanni"
         }
-    ],
-    "require": {
-        "twig/twig": "^3.22",
-        "vlucas/phpdotenv": "^5.6",
-        "ext-pdo": "*",
-        "ext-pdo_mysql": "*",
-        "ext-pdo_sqlite": "*"
-    }
+    ]
 }

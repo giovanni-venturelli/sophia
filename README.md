@@ -242,3 +242,58 @@ Deep dives (module READMEs)
 - Router: [Router](core/router/README.md)
 - Database: [Database](core/database/README.md)
 
+
+
+
+---
+
+Using this repository as a package + demo
+----------------------------------------
+This repo is organized so that the core framework (package) is published to Packagist, while the demo app stays in-repo only.
+
+- Package (library): `giovanni-venturelli/sophia` (root of this repo)
+  - Namespaces exported: `Sophia\\*` (component, injector, router, form, database)
+  - Packagist dist excludes the demo and app assets via `.gitattributes`
+- Demo app: `/demo` (not included in the Packagist dist)
+  - Depends on the package via Composer repository of type `path` to the repo root
+  - Autoloads the demo namespaces from the project folders (`../pages`, `../Shared`, `../services`)
+
+Install the package (as a dependency) in another project
+-------------------------------------------------------
+```bash
+composer require giovanni-venturelli/sophia
+```
+
+Run the demo locally from this repo
+-----------------------------------
+1) Install dependencies for the demo (uses a path repo to the root library):
+```bash
+cd demo
+composer install
+```
+
+2) Start a PHP dev server pointing to the demo folder (or your web server root to `demo/`):
+```bash
+php -S localhost:8080 -t demo
+```
+
+Then open:
+- http://localhost:8080/index.php/home/123 (adjust paths if needed)
+
+Notes
+-----
+- The demo reuses the project folders `pages/`, `Shared/`, `services/`, `config/`, `css/`, `js/`, `cache/` from the repo root.
+- The router base path in the demo is set to `/test-route/demo`. If you serve it at a different path, update `$basePath` in `demo/index.php` and the global asset paths.
+- The package requires PHP >= 8.1; the demo also requires `vlucas/phpdotenv` for `.env` loading.
+
+Publishing to Packagist
+-----------------------
+1) Push this repository to GitHub under `giovanni-venturelli/sophia`.
+2) Create a version tag, e.g.:
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+3) Submit the repository URL to Packagist and set up the GitHub Service Hook so Packagist auto-updates on new tags.
+
+After publish, consumers can `composer require giovanni-venturelli/sophia`.

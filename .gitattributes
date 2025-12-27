@@ -1,0 +1,13 @@
+# Exclude demo application and non-library assets from export (Packagist dist)
+/demo export-ignore
+/pages export-ignore
+/Shared export-ignore
+/services export-ignore
+/routes.php export-ignore
+/index.php export-ignore
+/css export-ignore
+/js export-ignore
+/config export-ignore
+/cache export-ignore
+/.env export-ignore
+/.env.example export-ignore

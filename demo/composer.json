@@ -1,0 +1,25 @@
+{
+  "name": "giovanni-venturelli/sophia-demo",
+  "type": "project",
+  "description": "Demo application for the Sophia framework.",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "giovanni-venturelli/sophia": "dev-main",
+    "vlucas/phpdotenv": "^5.6"
+  },
+  "repositories": [
+    {
+      "type": "path",
+      "url": "..",
+      "options": { "symlink": true }
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "App\\Pages\\": "../pages/",
+      "Shared\\": "../Shared/",
+      "App\\Services\\": "../services/"
+    }
+  }
+}
