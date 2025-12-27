@@ -11,6 +11,10 @@ use ReflectionObject;
 use ReflectionProperty;
 use RuntimeException;
 use Twig\Environment;
+use App\Form\FormRegistry;
+use App\Form\CsrfService;
+use App\Form\FlashService;
+use App\Form\Attributes\FormHandler;
 use Twig\Error\LoaderError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
@@ -376,12 +380,41 @@ class Renderer
             }
         }
 
+        // Metodi getter → dati
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             if (str_starts_with($method->getName(), 'get') &&
                 $method->getNumberOfRequiredParameters() === 0) {
                 $propertyName = lcfirst(substr($method->getName(), 3));
                 $data[$propertyName] = $method->invoke($instance);
             }
+        }
+
+        // 🔥 Form handlers: registra i metodi marcati con #[FormHandler('name')]
+        $formTokens = [];
+        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            $attrs = $method->getAttributes(FormHandler::class);
+            if (!$attrs) continue;
+            foreach ($attrs as $attr) {
+                /** @var FormHandler $meta */
+                $meta = $attr->newInstance();
+                $name = $meta->name;
+                $methodName = $method->getName();
+                // Compute current route path similar to Router::getCurrentPath()
+                $uri = $_SERVER['REQUEST_URI'] ?? '/';
+                $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+                $base = Router::getInstance()->getBasePath();
+                if ($base && str_starts_with($path, $base)) {
+                    $path = substr($path, strlen($base));
+                    if ($path === '') { $path = '/'; }
+                }
+                $routePath = ltrim($path, '/');
+                $token = FormRegistry::getInstance()->registerHandler($reflection->getName(), $name, $methodName, $routePath);
+                $formTokens[$name] = $token;
+            }
+        }
+        if (!empty($formTokens)) {
+            $data['__form_tokens'] = $formTokens;
+            $data['__component_class'] = $reflection->getName();
         }
 
         return $data;
@@ -446,6 +479,62 @@ class Renderer
 
         $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
         $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
+
+        // Forms: action URL helper
+        $this->twig->addFunction(new TwigFunction('form_action', function (array $context, string $name) {
+            $class = $context['__component_class'] ?? null;
+            if (!$class) return '#';
+            $token = FormRegistry::getInstance()->getTokenFor($class, $name);
+            if (!$token) return '#';
+            $router = Router::getInstance();
+            $path = $router->url('forms.submit', ['token' => $token]); // named route
+            $base = rtrim($router->getBasePath() ?: '', '/');
+            return ($base !== '' ? $base : '') . $path;
+        }, ['needs_context' => true]));
+
+        // CSRF hidden input field
+        $this->twig->addFunction(
+            new TwigFunction(
+                'csrf_field',
+                function () {
+                    $csrf = Injector::inject(CsrfService::class);
+                    $token = $csrf->getToken();
+                    return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token) . '">';
+                },
+                ['is_safe' => ['html']]
+            )
+        );
+
+        // Flash helpers (injectable services)
+        // flash(): consume-on-read (pull)
+        $this->twig->addFunction(new TwigFunction('flash', function (string $key, $default = null) {
+            $flash = Injector::inject(FlashService::class);
+            return $flash->pullValue($key, $default);
+        }));
+        // peek_flash(): read without consuming
+        $this->twig->addFunction(new TwigFunction('peek_flash', function (string $key, $default = null) {
+            $flash = Injector::inject(FlashService::class);
+            return $flash->getValue($key, $default);
+        }));
+        $this->twig->addFunction(new TwigFunction('has_flash', function (string $key) {
+            $flash = Injector::inject(FlashService::class);
+            return $flash->hasKey($key);
+        }));
+
+        // Validation errors helper
+        $this->twig->addFunction(new TwigFunction('form_errors', function (?string $field = null) {
+            $flash = Injector::inject(FlashService::class);
+            $errors = $flash->getValue('__errors', []);
+            if ($field === null) return $errors;
+            return $errors[$field] ?? [];
+        }));
+
+        // Old input helper
+        $this->twig->addFunction(new TwigFunction('old', function (string $field, $default = '') {
+            $flash = Injector::inject(FlashService::class);
+            $old = $flash->getValue('__old', []);
+            return $old[$field] ?? $default;
+        }));
     }
 
     public function getRouteData(?string $key = null): mixed
