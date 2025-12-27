@@ -12,7 +12,7 @@ use App\Router\Router;
 #[Component(
     selector: 'app-contact',
     template: 'contact.html.twig',
-    styles: []
+    styles: ['contact.css']
 )]
 class ContactComponent
 {
@@ -53,9 +53,15 @@ class ContactComponent
             return new RedirectResult($contactUrl);
         }
 
-        // Success: clear old form data and errors, set success message
+        // Success: clear old form data and errors, set success message and pass submitted data to thank-you
         $this->flash->setValue('__old', []);
         $this->flash->setValue('__errors', []);
+        // Store submitted data for the thank-you page
+        $this->flash->setValue('__submitted', [
+            'name' => $name,
+            'email' => $email,
+            'message' => $message,
+        ]);
         $this->flash->setValue('success', 'Message sent successfully!');
         return new RedirectResult($thankYouUrl);
     }

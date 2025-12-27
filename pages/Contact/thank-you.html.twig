@@ -1,5 +1,18 @@
 <section class="thank-you">
   <h1>{{ title }}</h1>
   <p>{{ message }}</p>
+
+  {% set submitted = peek_flash('__submitted') %}
+  {% if submitted %}
+    <div class="submitted-summary">
+      <h2>Submitted data</h2>
+      <ul>
+        <li><strong>Name</strong> {{ submitted.name ?? '' }}</li>
+        <li><strong>Email</strong> {{ submitted.email ?? '' }}</li>
+        <li><strong>Message</strong> {{ submitted.message ?? '' }}</li>
+      </ul>
+    </div>
+  {% endif %}
+
   <p><a href="{{ contactUrl }}">Back to contact</a></p>
 </section>

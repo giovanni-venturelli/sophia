@@ -8,7 +8,7 @@ use App\Router\Router;
 #[Component(
     selector: 'app-contact-thank-you',
     template: 'thank-you.html.twig',
-    styles: []
+    styles: ['thank-you.css']
 )]
 class ThankYouComponent
 {
