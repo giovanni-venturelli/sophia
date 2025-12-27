@@ -7,10 +7,10 @@ requests to either UI Components (rendered with Twig) or to plain PHP callbacks
 route-scoped data, nested routes, redirects, and simple guards/middleware.
 
 Core pieces:
-- `App\Router\Router` — singleton router and matching engine
-- `App\Router\Models\MiddlewareInterface` — interface for guards (`canActivate`)
-- `App\Component\Renderer` — used by the router to render component routes
-- `App\Component\ComponentRegistry` — used for lazy component registration
+- `Sophia\Router\Router` — singleton router and matching engine
+- `Sophia\Router\Models\MiddlewareInterface` — interface for guards (`canActivate`)
+- `Sophia\Component\Renderer` — used by the router to render component routes
+- `Sophia\Component\ComponentRegistry` — used for lazy component registration
 
 
 Quick navigation
@@ -49,9 +49,9 @@ Quick start
 -----------
 `index.php` wiring:
 ```php
-use App\Component\ComponentRegistry;
-use App\Component\Renderer;
-use App\Router\Router;
+use Sophia\Component\ComponentRegistry;
+use Sophia\Component\Renderer;
+use Sophia\Router\Router;
 
 $registry = ComponentRegistry::getInstance();
 $renderer = new Renderer($registry, __DIR__ . '/pages', cachePath: __DIR__ . '/cache/twig', debug: true);
@@ -69,7 +69,7 @@ $router->dispatch();
 ```php
 use App\Pages\Home\HomeComponent;
 use App\Pages\About\AboutComponent;
-use App\Router\Router;
+use Sophia\Router\Router;
 
 $router = Router::getInstance();
 
@@ -210,7 +210,7 @@ Guards/Middleware (`canActivate`)
 Guards are simple classes that implement `MiddlewareInterface` with a `handle(): bool` method.
 Provide them via `canActivate`. All must return `true` to proceed; otherwise routing stops.
 ```php
-use App\Router\Models\MiddlewareInterface;
+use Sophia\Router\Models\MiddlewareInterface;
 
 class AuthGuard implements MiddlewareInterface {
     public function handle(): bool {
@@ -272,8 +272,8 @@ Full example
 ```php
 use App\Pages\Blog\BlogComponent;
 use App\Pages\Post\PostComponent;
-use App\Router\Router;
-use App\Router\Models\MiddlewareInterface;
+use Sophia\Router\Router;
+use Sophia\Router\Models\MiddlewareInterface;
 
 class AuthGuard implements MiddlewareInterface {
     public function handle(): bool { return isset($_SESSION['user']); }

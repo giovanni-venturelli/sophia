@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Database;
+namespace Sophia\Database;
 
-use App\Injector\Injectable;
-use App\Injector\Inject;
-use App\Injector\Injector;
+use Sophia\Injector\Injectable;
+use Sophia\Injector\Inject;
+use Sophia\Injector\Injector;
 use Throwable;
 
 #[Injectable(providedIn: "root")]

@@ -1,10 +1,12 @@
 <?php
 
 use App\Pages\About\AboutComponent;
+use App\Pages\About\AboutLayoutComponent;
+use App\Pages\Contact\ThankYouComponent;
 use App\Pages\Home\HomeComponent;
 use App\Pages\Contact\ContactComponent;
-use App\Form\FormController;
-use App\Router\Router;
+use Sophia\Form\FormController;
+use Sophia\Router\Router;
 
 $router = Router::getInstance();
 
@@ -30,7 +32,7 @@ $router->configure([
     ],
     [
         'path' => 'contact/thank-you',
-        'component' => App\Pages\Contact\ThankYouComponent::class,
+        'component' => ThankYouComponent::class,
         'name' => 'contact.thankyou'
     ],
 
@@ -44,7 +46,7 @@ $router->configure([
     // About section with nested routes
     [
         'path' => 'about',
-        'component' => \App\Pages\About\AboutLayoutComponent::class,
+        'component' => AboutLayoutComponent::class,
         'children' => include __DIR__ . '/pages/About/routes.php'
     ],
 

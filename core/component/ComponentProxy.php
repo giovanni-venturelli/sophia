@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Component;
+namespace Sophia\Component;
 
-use App\Injector\Inject;
-use App\Injector\Injector;
+use Sophia\Injector\Inject;
+use Sophia\Injector\Injector;
 use ReflectionClass;
 use ReflectionException;
 

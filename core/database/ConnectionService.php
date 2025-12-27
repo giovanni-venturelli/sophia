@@ -1,7 +1,7 @@
 <?php
-namespace App\Database;
-use App\Database\Drivers\DriverInterface;
-use App\Injector\Injectable;
+namespace Sophia\Database;
+use Sophia\Database\Drivers\DriverInterface;
+use Sophia\Injector\Injectable;
 
 
 #[Injectable(providedIn: "root")]

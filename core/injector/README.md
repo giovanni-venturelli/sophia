@@ -6,11 +6,11 @@ It is inspired by Angular: components create hierarchical scopes, services can b
 component level or globally (root), and injections happen automatically.
 
 Core pieces:
-- `App\Injector\Injector` — the DI container and resolver
-- `App\Injector\Injectable` — class attribute to declare a service as injectable
-- `App\Injector\Inject` — property attribute to request a dependency on components
-- `App\Component\Component` — component attribute that declares template and local `providers`
-- `App\Component\ComponentProxy` — builds component instances and performs property injection
+- `Sophia\Injector\Injector` — the DI container and resolver
+- `Sophia\Injector\Injectable` — class attribute to declare a service as injectable
+- `Sophia\Injector\Inject` — property attribute to request a dependency on components
+- `Sophia\Component\Component` — component attribute that declares template and local `providers`
+- `Sophia\Component\ComponentProxy` — builds component instances and performs property injection
 
 
 Quick navigation
@@ -58,7 +58,7 @@ If a service should be globally shared, mark it as `providedIn: 'root'`.
 <?php
 namespace App\Services;
 
-use App\Injector\Injectable;
+use Sophia\Injector\Injectable;
 
 #[Injectable(providedIn: 'root')]
 class ConnectionService
@@ -68,7 +68,7 @@ class ConnectionService
 ```
 Usage anywhere (no component scope required):
 ```php
-use App\Injector\Injector;
+use Sophia\Injector\Injector;
 use App\Services\ConnectionService;
 
 $db = Injector::inject(ConnectionService::class); // the unique root instance
@@ -84,7 +84,7 @@ first from the component itself, then by walking up the parent component chain.
 <?php
 namespace App\Pages\Home;
 
-use App\Component\Component;
+use Sophia\Component\Component;
 use App\Services\UserService;
 
 #[Component(
@@ -109,8 +109,8 @@ Components request dependencies with the `#[Inject]` attribute on typed properti
 <?php
 namespace App\Pages\Home;
 
-use App\Component\Component;
-use App\Injector\Inject;
+use Sophia\Component\Component;
+use Sophia\Injector\Inject;
 use App\Services\UserService;
 
 #[Component(selector: 'app-home', template: 'home.html.twig', providers: [UserService::class])]
@@ -141,7 +141,7 @@ it resolves each constructor parameter by type using the same rules (root first,
 <?php
 namespace App\Services;
 
-use App\Injector\Injectable;
+use Sophia\Injector\Injectable;
 
 #[Injectable] // not root; must be listed in some component providers
 class UserService
@@ -172,7 +172,7 @@ Manual injection with Injector::inject
 In non-component code (e.g., `index.php`) or static contexts you can always resolve a dependency manually.
 
 ```php
-use App\Injector\Injector;
+use Sophia\Injector\Injector;
 use App\Services\ConnectionService;
 
 $db = Injector::inject(ConnectionService::class); // works because it's root-provided
@@ -180,8 +180,8 @@ $db = Injector::inject(ConnectionService::class); // works because it's root-pro
 When calling `Injector::inject()` manually for a non-root service, you may pass the current component scope
 (the framework does this automatically during rendering):
 ```php
-use App\Injector\Injector;
-use App\Component\ComponentProxy;
+use Sophia\Injector\Injector;
+use Sophia\Component\ComponentProxy;
 use App\Services\UserService;
 
 /** @var ComponentProxy $scope */
@@ -204,7 +204,7 @@ Service definitions:
 <?php
 namespace App\Services;
 
-use App\Injector\Injectable;
+use Sophia\Injector\Injectable;
 
 #[Injectable(providedIn: 'root')]
 class ConnectionService { /* ... */ }
@@ -221,8 +221,8 @@ Component with providers and property injection:
 <?php
 namespace App\Pages\Blog;
 
-use App\Component\Component;
-use App\Injector\Inject;
+use Sophia\Component\Component;
+use Sophia\Injector\Inject;
 use App\Services\PostRepository;
 
 #[Component(

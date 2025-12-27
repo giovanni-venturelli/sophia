@@ -1,7 +1,7 @@
 <?php
 namespace App\Pages\About;
 
-use App\Component\Component;
+use Sophia\Component\Component;
 use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;
 use Shared\Footer\FooterComponent;

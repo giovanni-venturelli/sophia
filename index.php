@@ -1,10 +1,10 @@
 <?php
 
-use App\Component\ComponentRegistry;
-use App\Component\Renderer;
-use App\Database\ConnectionService;
-use App\Injector\Injector;
-use App\Router\Router;
+use Sophia\Component\ComponentRegistry;
+use Sophia\Component\Renderer;
+use Sophia\Database\ConnectionService;
+use Sophia\Injector\Injector;
+use Sophia\Router\Router;
 
 require __DIR__ . '/vendor/autoload.php';
 

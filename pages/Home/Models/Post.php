@@ -1,7 +1,7 @@
 <?php
 namespace App\Pages\Home\Models;
 
-use App\Database\Entity;
+use Sophia\Database\Entity;
 
 class Post extends Entity
 {

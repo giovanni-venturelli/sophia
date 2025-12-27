@@ -1,8 +1,8 @@
 <?php
-namespace App\Form;
+namespace Sophia\Form;
 
-use App\Injector\Injectable;
-use App\Injector\Injector;
+use Sophia\Injector\Injectable;
+use Sophia\Injector\Injector;
 
 #[Injectable(providedIn: 'root')]
 class FlashService

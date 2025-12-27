@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Services;
-use App\Injector\Injectable;
+use Sophia\Injector\Injectable;
 
 #[Injectable(providedIn: 'root')]  // Global singleton service
 class AppService {

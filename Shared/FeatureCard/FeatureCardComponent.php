@@ -2,9 +2,9 @@
 
 namespace Shared\FeatureCard;
 
-use App\Component\Component;
-use App\Component\Input;
-use App\Injector\Inject;
+use Sophia\Component\Component;
+use Sophia\Component\Input;
+use Sophia\Injector\Inject;
 use App\Services\AppService;
 
 #[Component(

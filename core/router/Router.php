@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Router;
+namespace Sophia\Router;
 
-use App\Component\ComponentRegistry;
-use App\Component\Renderer;
-use App\Router\Models\MiddlewareInterface;
+use Sophia\Component\ComponentRegistry;
+use Sophia\Component\Renderer;
+use Sophia\Router\Models\MiddlewareInterface;
 use function call_user_func;
 
 class Router

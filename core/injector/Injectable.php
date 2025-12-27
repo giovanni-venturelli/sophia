@@ -5,7 +5,7 @@
  * #[Injectable(providedIn: 'root')] = global singleton
  */
 
-namespace App\Injector;
+namespace Sophia\Injector;
 
 
 use Attribute;

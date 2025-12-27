@@ -1,5 +1,5 @@
 <?php
-namespace App\Component;
+namespace Sophia\Component;
 
 use Throwable;
 use Twig\Environment;

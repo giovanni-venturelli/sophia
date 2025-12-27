@@ -1,7 +1,7 @@
 <?php
-namespace App\Injector;
+namespace Sophia\Injector;
 
-use App\Component\ComponentProxy;
+use Sophia\Component\ComponentProxy;
 use ReflectionClass;
 use ReflectionException;
 use Throwable;

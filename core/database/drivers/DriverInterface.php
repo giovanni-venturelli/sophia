@@ -1,5 +1,5 @@
 <?php
-namespace App\Database\Drivers;
+namespace Sophia\Database\Drivers;
 
 interface DriverInterface {
     public function query(string $sql, array $params = []): array;

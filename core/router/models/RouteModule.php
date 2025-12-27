@@ -1,5 +1,5 @@
 <?php
-namespace App\Router\Models;
+namespace Sophia\Router\Models;
 
 /**
  * Modulo di route (come in Angular)

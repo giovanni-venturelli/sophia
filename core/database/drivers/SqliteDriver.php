@@ -1,5 +1,5 @@
 <?php
-namespace App\Database\Drivers;
+namespace Sophia\Database\Drivers;
 
 use PDO;
 

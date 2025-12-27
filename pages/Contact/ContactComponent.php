@@ -1,13 +1,13 @@
 <?php
 namespace App\Pages\Contact;
 
-use App\Component\Component;
-use App\Form\Attributes\FormHandler;
-use App\Form\FlashService;
-use App\Injector\Inject;
-use App\Form\FormRequest;
-use App\Form\Results\RedirectResult;
-use App\Router\Router;
+use Sophia\Component\Component;
+use Sophia\Form\Attributes\FormHandler;
+use Sophia\Form\FlashService;
+use Sophia\Injector\Inject;
+use Sophia\Form\FormRequest;
+use Sophia\Form\Results\RedirectResult;
+use Sophia\Router\Router;
 
 #[Component(
     selector: 'app-contact',

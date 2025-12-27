@@ -1,5 +1,5 @@
 <?php
-namespace App\Form\Results;
+namespace Sophia\Form\Results;
 
 class RedirectResult
 {

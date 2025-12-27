@@ -2,7 +2,7 @@
 /**
  * ComponentRegistry - Singleton for centralized component management
  */
-namespace App\Component;
+namespace Sophia\Component;
 
 use ReflectionClass;
 use ReflectionException;

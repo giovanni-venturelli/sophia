@@ -46,7 +46,7 @@ PHP class:
 <?php
 namespace App\Pages\Hello;
 
-use App\Component\Component;
+use Sophia\Component\Component;
 
 #[Component(
     selector: 'app-hello',
@@ -63,10 +63,10 @@ Twig template `hello.html.twig` (placed next to `HelloComponent.php` or in a con
 ```
 Rendered (root) via the framework's `Renderer`:
 ```php
-$registry = \App\Component\ComponentRegistry::getInstance();
+$registry = \Sophia\Component\ComponentRegistry::getInstance();
 $registry->register(App\Pages\Hello\HelloComponent::class);
 
-$renderer = new \App\Component\Renderer($registry, __DIR__ . '/pages');
+$renderer = new \Sophia\Component\Renderer($registry, __DIR__ . '/pages');
 echo $renderer->renderRoot('app-hello');
 ```
 
@@ -148,8 +148,8 @@ supply values through the `component()` Twig function when rendering a child.
 
 Child component:
 ```php
-use App\Component\Component;
-use App\Component\Input;
+use Sophia\Component\Component;
+use Sophia\Component\Input;
 
 #[Component(selector: 'app-child', template: 'child.html.twig')]
 class ChildComponent
@@ -187,9 +187,9 @@ Dependency Injection in components
 
 Example:
 ```php
-use App\Component\Component;
-use App\Injector\Inject;
-use App\Injector\Injectable;
+use Sophia\Component\Component;
+use Sophia\Injector\Inject;
+use Sophia\Injector\Injectable;
 
 #[Injectable(providedIn: 'root')]
 class Logger { public function info(string $m): void {} }
@@ -236,8 +236,8 @@ Registration and rendering (root rendering)
 Register components with the `ComponentRegistry` and render with `Renderer`.
 
 ```php
-use App\Component\ComponentRegistry;
-use App\Component\Renderer;
+use Sophia\Component\ComponentRegistry;
+use Sophia\Component\Renderer;
 
 $registry = ComponentRegistry::getInstance();
 $registry->register(App\Pages\Home\HomeComponent::class); // auto-registers imports
@@ -280,7 +280,7 @@ Full example (parent + child + DI)
 ----------------------------------
 Services:
 ```php
-use App\Injector\Injectable;
+use Sophia\Injector\Injectable;
 
 #[Injectable(providedIn: 'root')]
 class ConnectionService {}
@@ -293,8 +293,8 @@ class PostRepository {
 ```
 Child component:
 ```php
-use App\Component\Component;
-use App\Component\Input;
+use Sophia\Component\Component;
+use Sophia\Component\Input;
 
 #[Component(selector: 'app-post-list', template: 'post-list.html.twig')]
 class PostListComponent
@@ -304,8 +304,8 @@ class PostListComponent
 ```
 Parent component:
 ```php
-use App\Component\Component;
-use App\Injector\Inject;
+use Sophia\Component\Component;
+use Sophia\Injector\Inject;
 
 #[Component(
   selector: 'app-blog',

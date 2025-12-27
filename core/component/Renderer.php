@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Component;
+namespace Sophia\Component;
 
-use App\Injector\Injector;
-use App\Router\Router;
+use Sophia\Injector\Injector;
+use Sophia\Router\Router;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
@@ -11,10 +11,10 @@ use ReflectionObject;
 use ReflectionProperty;
 use RuntimeException;
 use Twig\Environment;
-use App\Form\FormRegistry;
-use App\Form\CsrfService;
-use App\Form\FlashService;
-use App\Form\Attributes\FormHandler;
+use Sophia\Form\FormRegistry;
+use Sophia\Form\CsrfService;
+use Sophia\Form\FlashService;
+use Sophia\Form\Attributes\FormHandler;
 use Twig\Error\LoaderError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;

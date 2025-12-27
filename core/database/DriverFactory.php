@@ -1,10 +1,10 @@
 <?php
-namespace App\Database;
-use App\Database\Drivers\MysqlDriver;
-use App\Database\Drivers\SqliteDriver;
-use App\Database\Drivers\PostgresDriver;
-use App\Database\Drivers\SqlServerDriver;
-use App\Database\Drivers\DriverInterface;
+namespace Sophia\Database;
+use Sophia\Database\Drivers\MysqlDriver;
+use Sophia\Database\Drivers\SqliteDriver;
+use Sophia\Database\Drivers\PostgresDriver;
+use Sophia\Database\Drivers\SqlServerDriver;
+use Sophia\Database\Drivers\DriverInterface;
 use InvalidArgumentException;
 
 class DriverFactory {

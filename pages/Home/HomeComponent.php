@@ -5,10 +5,10 @@
 
 namespace App\Pages\Home;
 
-use App\Component\Component;
-use App\Component\Input;
-use App\Database\ConnectionService;
-use App\Injector\Inject;
+use Sophia\Component\Component;
+use Sophia\Component\Input;
+use Sophia\Database\ConnectionService;
+use Sophia\Injector\Inject;
 use App\Pages\Home\Models\Post;
 use App\Services\AppService;
 use Shared\FeatureCard\FeatureCardComponent;

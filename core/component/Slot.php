@@ -1,5 +1,5 @@
 <?php
-namespace App\Component;
+namespace Sophia\Component;
 
 use Attribute;
 

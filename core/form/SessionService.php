@@ -1,7 +1,7 @@
 <?php
-namespace App\Form;
+namespace Sophia\Form;
 
-use App\Injector\Injectable;
+use Sophia\Injector\Injectable;
 
 #[Injectable(providedIn: 'root')]
 class SessionService

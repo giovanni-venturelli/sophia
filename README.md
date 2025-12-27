@@ -82,11 +82,11 @@ Quick start (index.php + routes.php)
 Minimal bootstrap in `index.php`:
 ```php
 <?php
-use App\Component\ComponentRegistry;
-use App\Component\Renderer;
-use App\Database\ConnectionService;
-use App\Injector\Injector;
-use App\Router\Router;
+use Sophia\Component\ComponentRegistry;
+use Sophia\Component\Renderer;
+use Sophia\Database\ConnectionService;
+use Sophia\Injector\Injector;
+use Sophia\Router\Router;
 
 require __DIR__ . '/vendor/autoload.php';
 
@@ -117,7 +117,7 @@ Define routes in `routes.php`:
 ```php
 <?php
 use App\Pages\Home\HomeComponent;
-use App\Router\Router;
+use Sophia\Router\Router;
 
 $router = Router::getInstance();
 
@@ -139,7 +139,7 @@ Component class under `pages/...` and a Twig template next to it (or inside the 
 <?php
 namespace App\Pages\Home;
 
-use App\Component\Component;
+use Sophia\Component\Component;
 
 #[Component(selector: 'app-home', template: 'home.html.twig')]
 class HomeComponent
@@ -169,9 +169,9 @@ Dependency Injection (services)
 
 Example service + usage in a component:
 ```php
-use App\Injector\Injectable;
-use App\Injector\Inject;
-use App\Component\Component;
+use Sophia\Injector\Injectable;
+use Sophia\Injector\Inject;
+use Sophia\Component\Component;
 
 #[Injectable(providedIn: 'root')]
 class Logger { public function info(string $m): void {} }
@@ -211,7 +211,7 @@ The `ConnectionService` is a root‑provided service with a fluent QueryBuilder 
 
 Example entity:
 ```php
-use App\Database\Entity;
+use Sophia\Database\Entity;
 
 class Post extends Entity
 {

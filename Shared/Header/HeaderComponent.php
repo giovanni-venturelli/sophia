@@ -1,10 +1,10 @@
 <?php
 namespace Shared\Header;
 
-use App\Component\Component;
-use App\Component\Input;
-use App\Component\Slot;
-use App\Component\SlotContent;
+use Sophia\Component\Component;
+use Sophia\Component\Input;
+use Sophia\Component\Slot;
+use Sophia\Component\SlotContent;
 
 #[Component(
     selector: 'app-header',

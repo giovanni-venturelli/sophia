@@ -3,16 +3,16 @@
     "type": "project",
     "autoload": {
         "psr-4": {
-            "App\\Router\\": "core/router/",
-            "App\\Router\\Models\\": "core/router/models/",
-            "App\\Component\\": "core/component/",
-            "App\\Injector\\": "core/injector/",
-            "App\\Form\\": "core/form/",
+            "Sophia\\Router\\": "core/router/",
+            "Sophia\\Router\\Models\\": "core/router/models/",
+            "Sophia\\Component\\": "core/component/",
+            "Sophia\\Injector\\": "core/injector/",
+            "Sophia\\Form\\": "core/form/",
             "App\\Pages\\": "pages/",
             "Shared\\": "Shared/",
             "App\\Services\\": "services",
-            "App\\Database\\": "core/database",
-            "App\\Database\\Drivers\\": "core/database/drivers"
+            "Sophia\\Database\\": "core/database",
+            "Sophia\\Database\\Drivers\\": "core/database/drivers"
         }
     },
     "authors": [

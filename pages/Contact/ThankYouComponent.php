@@ -1,9 +1,9 @@
 <?php
 namespace App\Pages\Contact;
 
-use App\Component\Component;
-use App\Component\Renderer;
-use App\Router\Router;
+use Sophia\Component\Component;
+use Sophia\Component\Renderer;
+use Sophia\Router\Router;
 
 #[Component(
     selector: 'app-contact-thank-you',

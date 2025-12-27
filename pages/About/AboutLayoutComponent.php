@@ -2,9 +2,9 @@
 
 namespace App\Pages\About;
 
-use App\Component\Component;
-use App\Component\Slot;
-use App\Component\SlotContent;
+use Sophia\Component\Component;
+use Sophia\Component\Slot;
+use Sophia\Component\SlotContent;
 use Shared\Header\HeaderComponent;
 use Shared\Footer\FooterComponent;
 

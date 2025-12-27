@@ -100,9 +100,9 @@ Active Record pattern. Estendi Entity per ogni modello.
 #### Model Definition
 ```php
     <?php
-    namespace App\Models;
+    namespace Sophia\Models;
     
-    use App\Database\Entity;
+    use Sophia\Database\Entity;
     
     class Post extends Entity
     {

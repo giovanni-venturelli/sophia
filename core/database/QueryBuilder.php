@@ -1,7 +1,7 @@
 <?php
-namespace App\Database;
+namespace Sophia\Database;
 
-use App\Database\Drivers\DriverInterface;
+use Sophia\Database\Drivers\DriverInterface;
 
 class QueryBuilder {
     private DriverInterface $driver;

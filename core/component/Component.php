@@ -1,7 +1,7 @@
 <?php
-namespace App\Component;
+namespace Sophia\Component;
 
-use App\Injector\Injector;
+use Sophia\Injector\Injector;
 use Attribute;
 
 

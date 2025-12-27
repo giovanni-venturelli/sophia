@@ -1,5 +1,5 @@
 <?php
-namespace App\Form;
+namespace Sophia\Form;
 
 class FormRequest
 {

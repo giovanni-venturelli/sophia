@@ -1,10 +1,10 @@
 <?php
-namespace App\Form;
+namespace Sophia\Form;
 
-use App\Form\Results\JsonResult;
-use App\Form\Results\NoContentResult;
-use App\Form\Results\RedirectResult;
-use App\Injector\Injector;
+use Sophia\Form\Results\JsonResult;
+use Sophia\Form\Results\NoContentResult;
+use Sophia\Form\Results\RedirectResult;
+use Sophia\Injector\Injector;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
@@ -145,7 +145,7 @@ class FormController
     {
         $ref = new \ReflectionObject($instance);
         foreach ($ref->getProperties() as $prop) {
-            $attrs = $prop->getAttributes(\App\Injector\Inject::class);
+            $attrs = $prop->getAttributes(\Sophia\Injector\Inject::class);
             if (!$attrs) { continue; }
             $type = $prop->getType()?->getName();
             if ($type && class_exists($type)) {

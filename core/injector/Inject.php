@@ -3,7 +3,7 @@
  * Property injection attribute
  * #[Inject] private Service $service;
  */
-namespace App\Injector;
+namespace Sophia\Injector;
 
 use Attribute;
 

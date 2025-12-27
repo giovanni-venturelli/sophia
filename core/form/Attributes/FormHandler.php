@@ -1,5 +1,5 @@
 <?php
-namespace App\Form\Attributes;
+namespace Sophia\Form\Attributes;
 
 use Attribute;
 
