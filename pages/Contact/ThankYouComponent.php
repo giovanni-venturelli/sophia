@@ -1,0 +1,23 @@
+<?php
+namespace App\Pages\Contact;
+
+use App\Component\Component;
+use App\Component\Renderer;
+use App\Router\Router;
+
+#[Component(
+    selector: 'app-contact-thank-you',
+    template: 'thank-you.html.twig',
+    styles: ['thank-you.css']
+)]
+class ThankYouComponent
+{
+    public string $title = 'Thank you!';
+    public string $message = 'Your message has been sent successfully. We will get back to you soon.';
+
+    public function getContactUrl() {
+        $router = Router::getInstance();
+        $base =  $router->getBasePath();
+        return ($base !== '' ? $base : '') . $router->url('contact');
+    }
+}

@@ -47,6 +47,20 @@ class Router
     public function dispatch(): void
     {
         $uri = $this->getCurrentPath();
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+        // 🔥 Early: handle POST callbacks (form submissions, APIs)
+        if (strtoupper($method) === 'POST') {
+            foreach ($this->routes as $route) {
+                $routePath = $this->normalizePath($route['path'] ?? '');
+                $match = $this->matchPathWithParams($routePath, $uri);
+                if ($match && isset($route['callback']) && is_callable($route['callback'])) {
+                    [$params] = $match;
+                    call_user_func($route['callback'], $params, $route);
+                    return;
+                }
+            }
+        }
 
         // 1) Prova nested route chain (layout + children)
         $chainMatch = $this->matchRouteChain($uri);

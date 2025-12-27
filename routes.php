@@ -2,6 +2,8 @@
 
 use App\Pages\About\AboutComponent;
 use App\Pages\Home\HomeComponent;
+use App\Pages\Contact\ContactComponent;
+use App\Form\FormController;
 use App\Router\Router;
 
 $router = Router::getInstance();
@@ -19,6 +21,27 @@ $router->configure([
             'description' => 'Welcome to our application',
         ],
     ],
+
+    // Contact page with POST form example
+    [
+        'path' => 'contact',
+        'component' => ContactComponent::class,
+        'name' => 'contact'
+    ],
+    [
+        'path' => 'contact/thank-you',
+        'component' => App\Pages\Contact\ThankYouComponent::class,
+        'name' => 'contact.thankyou'
+    ],
+
+    // Forms submit endpoint (POST)
+    [
+        'path' => 'forms/submit/:token',
+        'callback' => [FormController::class, 'handle'],
+        'name' => 'forms.submit'
+    ],
+
+    // About section with nested routes
     [
         'path' => 'about',
         'component' => \App\Pages\About\AboutLayoutComponent::class,
