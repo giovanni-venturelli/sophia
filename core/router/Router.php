@@ -119,7 +119,10 @@ class Router
                 // Trova l'indice del componente più alto (top) nella catena
                 $topIndex = null;
                 for ($i = 0; $i < count($chain); $i++) {
-                    if (isset($chain[$i]['component'])) { $topIndex = $i; break; }
+                    if (isset($chain[$i]['component'])) {
+                        $topIndex = $i;
+                        break;
+                    }
                 }
                 for ($i = count($chain) - 1; $i >= 0; $i--) {
                     $node = $chain[$i];
@@ -133,7 +136,7 @@ class Router
                         return;
                     }
                     $selector = $this->componentRegistry->lazyRegister($componentClass);
-                    $data = array_merge($this->currentParams, [ 'routeData' => $this->currentRouteData ]);
+                    $data = array_merge($this->currentParams, ['routeData' => $this->currentRouteData]);
 
                     $slotContent = $rendered !== null ? '<router-outlet name="outlet">' . $rendered . '</router-outlet>' : null;
 
@@ -239,12 +242,10 @@ class Router
                         "Guard '{$guardClass}' must implement " . MiddlewareInterface::class
                     );
                 }
-            }
-            // Se è già un'istanza, usala direttamente
+            } // Se è già un'istanza, usala direttamente
             elseif ($guardClass instanceof MiddlewareInterface) {
                 $guard = $guardClass;
-            }
-            else {
+            } else {
                 throw new \RuntimeException("Invalid guard type");
             }
 
@@ -341,12 +342,11 @@ class Router
         }
 
         $path = $this->normalizePath($route['path'] ?? '');
+        if (trim($this->basePath) !== '') {
+            $path = implode('/', [$this->basePath, $path]);
+        }
         if ($path !== '') {
             $segments = explode('/', $path);
-
-            if (trim($this->basePath) !== '') {
-                $segments = explode('/', $this->basePath . '/' . $path);
-            }
 
             foreach ($segments as $i => $segment) {
                 if (str_starts_with($segment, ':')) {
@@ -359,7 +359,6 @@ class Router
             }
             $path = implode('/', $segments);
         }
-
         return '/' . ltrim($path, '/');
     }
 
@@ -424,7 +423,7 @@ class Router
         $match = $this->matchPathWithParams($fullPath, $requestPath);
         if ($match) {
             [$params] = $match;
-            return [[ $node ], $params];
+            return [[$node], $params];
         }
 
         return null;
