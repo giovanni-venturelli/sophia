@@ -1,0 +1,43 @@
+<section class="contact-page">
+  <h1>{{ title }}</h1>
+
+  {% if has_flash('error') %}
+    <div class="alert alert-danger">{{ flash('error') }}</div>
+  {% endif %}
+  {% if has_flash('success') %}
+    <div class="alert alert-success">{{ flash('success') }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ form_action('send') }}">
+    {{ csrf_field()|raw }}
+
+    <div class="form-group">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" value="{{ old('name') }}" />
+      {% set errs = form_errors('name') %}
+      {% if errs %}
+        <ul class="errors">{% for e in errs %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" value="{{ old('email') }}" />
+      {% set errs = form_errors('email') %}
+      {% if errs %}
+        <ul class="errors">{% for e in errs %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label for="message">Message</label>
+      <textarea id="message" name="message" rows="5">{{ old('message') }}</textarea>
+      {% set errs = form_errors('message') %}
+      {% if errs %}
+        <ul class="errors">{% for e in errs %}<li>{{ e }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+
+    <button type="submit">Send</button>
+  </form>
+</section>
