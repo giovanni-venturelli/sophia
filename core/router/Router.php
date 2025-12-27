@@ -4,7 +4,7 @@ namespace Sophia\Router;
 
 use Sophia\Component\ComponentRegistry;
 use Sophia\Component\Renderer;
-use Sophia\Router\Models\MiddlewareInterface;
+use App\Router\Models\MiddlewareInterface;
 use function call_user_func;
 
 class Router
@@ -343,6 +343,11 @@ class Router
         $path = $this->normalizePath($route['path'] ?? '');
         if ($path !== '') {
             $segments = explode('/', $path);
+
+            if (trim($this->basePath) !== '') {
+                $segments = explode('/', $this->basePath . '/' . $path);
+            }
+
             foreach ($segments as $i => $segment) {
                 if (str_starts_with($segment, ':')) {
                     $paramName = substr($segment, 1);
