@@ -107,7 +107,7 @@ class Renderer
     {
         $styleId = 'globalStyle-' . uniqid();
         $path = $css;
-        $base = Router::getInstance()->getBasePath());
+        $base = Router::getInstance()->getBasePath();
         if (trim( $base !== '')) {
         $path = $base . '/' . $path;
         }
@@ -118,7 +118,7 @@ class Renderer
         $scriptId = 'globalScript-' . uniqid();
 
         $path = $js;
-        $base = Router::getInstance()->getBasePath());
+        $base = Router::getInstance()->getBasePath();
         if (trim( $base !== '')) {
             $path = $base . '/' . $path;
         }
