@@ -16,16 +16,17 @@ Multi-Driver PDO + Fluent QueryBuilder + Active Record ORM
 
 Installation
 ------------
+Add PDO extensions (and drivers you need) and Twig to your project. Dotenv is optional.
 ```json
-    {
-      "require": {
-        "twig/twig": "^3.22",
-        "vlucas/phpdotenv": "^5.6",
-        "ext-pdo": "*",
-        "ext-pdo_mysql": "*",
-        "ext-pdo_sqlite": "*"
-      }
-    }
+{
+  "require": {
+    "php": ">=8.1",
+    "twig/twig": "^3.22",
+    "ext-pdo": "*",
+    "ext-pdo_mysql": "*",
+    "ext-pdo_sqlite": "*"
+  }
+}
 ```
 Setup (index.php)
 -----------------

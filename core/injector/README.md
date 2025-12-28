@@ -74,6 +74,30 @@ use App\Services\ConnectionService;
 $db = Injector::inject(ConnectionService::class); // the unique root instance
 ```
 
+Framework root services (Router, Renderer)
+-----------------------------------------
+The framework exposes key services as root injectables too, so you can obtain them via DI instead of manual singletons/constructors:
+```php
+use Sophia\Injector\Injector;
+use Sophia\Router\Router;
+use Sophia\Component\Renderer;
+use Sophia\Component\ComponentRegistry;
+
+$registry = ComponentRegistry::getInstance();
+
+/** @var Renderer $renderer */
+$renderer = Injector::inject(Renderer::class);
+$renderer->setRegistry($registry);
+$renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'it', true);
+
+/** @var Router $router */
+$router = Injector::inject(Router::class);
+$router->setComponentRegistry($registry);
+$router->setRenderer($renderer);
+$router->setBasePath('/my-app');
+```
+This keeps bootstrapping clean and makes testing easier (you can swap implementations or override injectables if needed).
+
 
 Component-local providers (hierarchical resolution)
 --------------------------------------------------
