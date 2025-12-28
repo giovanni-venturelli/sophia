@@ -10,8 +10,6 @@ use Sophia\Router\Router;
 
 $router = Router::getInstance();
 
-$router->setBasePath('/test-route');
-
 $router->configure([
     // Home page
     [
@@ -47,6 +45,7 @@ $router->configure([
     [
         'path' => 'about',
         'component' => AboutLayoutComponent::class,
+        'name' => 'about',
         'children' => include __DIR__ . '/pages/About/routes.php'
     ],
 

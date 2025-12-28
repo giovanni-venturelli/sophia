@@ -11,7 +11,7 @@
                 <ul>
                     {% for item in navigation %}
                         <li class="{{ item.active ? 'active' : '' }}">
-                            <a href="{{ item.url }}">{{ item.label }}</a>
+                            <a href="{{ url(item.url) }}">{{ item.label }}</a>
                         </li>
                     {% endfor %}
                 </ul>

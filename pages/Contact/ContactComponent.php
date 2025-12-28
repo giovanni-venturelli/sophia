@@ -20,6 +20,8 @@ class ContactComponent
 
     #[Inject]
     private FlashService $flash;
+    #[Inject]
+    private Router $router;
 
     #[FormHandler('send')]
     public function onSend(FormRequest $request): RedirectResult
@@ -36,10 +38,9 @@ class ContactComponent
         elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) { $errors['email'][] = 'Email is not valid'; }
         if ($message === '') { $errors['message'][] = 'Message is required'; }
 
-        $router = Router::getInstance();
-        $base = rtrim($router->getBasePath() ?: '', '/');
-        $contactUrl = ($base !== '' ? $base : '') . $router->url('contact');
-        $thankYouUrl = ($base !== '' ? $base : '') . $router->url('contact.thankyou');
+        $router = $this->router;
+        $contactUrl = $router->url('contact');
+        $thankYouUrl = $router->url('contact.thankyou');
 
         if (!empty($errors)) {
             // Persist errors and old input

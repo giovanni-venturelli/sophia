@@ -23,10 +23,10 @@ class HeaderComponent
     public function __construct()
     {
         $this->navigation = [
-            ['label' => 'Home', 'url' => '/', 'active' => true],
-            ['label' => 'Dashboard', 'url' => '/dashboard', 'active' => false],
-            ['label' => 'About', 'url' => '/about', 'active' => false],
-            ['label' => 'Contact', 'url' => '/contact', 'active' => false],
+            ['label' => 'Home', 'url' => '', 'active' => true],
+            ['label' => 'Dashboard', 'url' => 'dashboard', 'active' => false],
+            ['label' => 'About', 'url' => 'about', 'active' => false],
+            ['label' => 'Contact', 'url' => 'contact', 'active' => false],
         ];
     }
 

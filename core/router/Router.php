@@ -4,9 +4,12 @@ namespace Sophia\Router;
 
 use Sophia\Component\ComponentRegistry;
 use Sophia\Component\Renderer;
-use App\Router\Models\MiddlewareInterface;
+use Sophia\Injector\Injectable;
+use Sophia\Injector\Injector;
+use Sophia\Router\Models\MiddlewareInterface;
 use function call_user_func;
 
+#[Injectable(providedIn: 'root')]
 class Router
 {
     /** @var self|null */
@@ -35,10 +38,18 @@ class Router
      */
     public static function getInstance(): self
     {
-        if (!self::$instance) {
-            self::$instance = new self();
+        // Backward-compatible: now resolved via DI as a root singleton
+        try {
+            /** @var self $instance */
+            $instance = Injector::inject(self::class);
+            return $instance;
+        } catch (\Throwable) {
+            // Fallback to legacy singleton if Injector is not available
+            if (!self::$instance) {
+                self::$instance = new self();
+            }
+            return self::$instance;
         }
-        return self::$instance;
     }
 
     /**

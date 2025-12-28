@@ -34,19 +34,18 @@ $registry = ComponentRegistry::getInstance();
 $templatesPath = $projectRoot . '/pages';
 $cachePath     = $projectRoot . '/cache/twig';
 
-$renderer = new Renderer(
-    $registry,
-    $templatesPath,
-    $cachePath,
-    'it',
-    true
-);
+// DI-based Renderer
+/** @var Renderer $renderer */
+$renderer = Injector::inject(Renderer::class);
+$renderer->setRegistry($registry);
+$renderer->configure($templatesPath, $cachePath, 'it', true);
 
 // Reuse global assets from project root
 $renderer->addGlobalStyle('/test-route/css/style.css');
 $renderer->addGlobalScripts('/test-route/js/scripts.js');
 
-$router = Router::getInstance();
+/** @var Router $router */
+$router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
 $router->setBasePath($basePath);

@@ -17,7 +17,6 @@ class ThankYouComponent
 
     public function getContactUrl() {
         $router = Router::getInstance();
-        $base =  $router->getBasePath();
-        return ($base !== '' ? $base : '') . $router->url('contact');
+        return  $router->url('contact');
     }
 }

@@ -23,20 +23,19 @@ $registry = ComponentRegistry::getInstance();
 $templatesPath = __DIR__ . '/pages';
 $cachePath     = __DIR__ . '/cache/twig';
 
-$renderer = new Renderer(
-    $registry,
-    $templatesPath,
-    $cachePath,
-    'it',
-    true
-);
+// Use DI for Renderer and Router
+/** @var Renderer $renderer */
+$renderer = Injector::inject(Renderer::class);
+$renderer->setRegistry($registry);
+$renderer->configure($templatesPath, $cachePath, 'it', true);
 $renderer->addGlobalStyle('/test-route/css/style.css');
 $renderer->addGlobalScripts('/test-route/js/scripts.js');
-$router = Router::getInstance();
 
+/** @var Router $router */
+$router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
-$router->setBasePath('/test-route');
+$router->setBasePath($basePath);
 
 require __DIR__ . '/routes.php';
 

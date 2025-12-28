@@ -2,6 +2,7 @@
 
 namespace Sophia\Component;
 
+use Sophia\Injector\Injectable;
 use Sophia\Injector\Injector;
 use Sophia\Router\Router;
 use ReflectionClass;
@@ -19,6 +20,7 @@ use Twig\Error\LoaderError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
 
+#[Injectable(providedIn: 'root')]
 class Renderer
 {
     private Environment $twig;
@@ -36,15 +38,39 @@ class Renderer
     private string $language = 'en';
 
     public function __construct(
-        ComponentRegistry $registry,
-        string            $templatesPath,
+        ?ComponentRegistry $registry = null,
+        string            $templatesPath = '',
         string            $cachePath = '',
         string            $language = 'en',
         bool              $debug = false
     )
     {
-        $this->registry = $registry;
+        $this->registry = $registry ?? ComponentRegistry::getInstance();
         $this->language = $language;
+        $this->initTwig($cachePath, $debug);
+        if ($templatesPath !== '') {
+            $this->addTemplatePath($templatesPath);
+        }
+        $this->registerCustomFunctions();
+    }
+
+    public function setRegistry(ComponentRegistry $registry): void
+    {
+        $this->registry = $registry;
+    }
+
+    public function configure(string $templatesPath, string $cachePath = '', string $language = 'en', bool $debug = false): void
+    {
+        $this->language = $language;
+        $this->templatePaths = [];
+        $this->initTwig($cachePath, $debug);
+        $this->addTemplatePath($templatesPath);
+        // Re-register functions on new Environment
+        $this->registerCustomFunctions();
+    }
+
+    private function initTwig(string $cachePath, bool $debug): void
+    {
         $loader = new FilesystemLoader();
         $this->twig = new Environment($loader, [
             'cache' => $cachePath,
@@ -52,9 +78,6 @@ class Renderer
             'debug' => $debug,
             'strict_variables' => true,
         ]);
-
-        $this->addTemplatePath($templatesPath);
-        $this->registerCustomFunctions();
     }
 
     private function resolveTemplatePath(string $componentClass, string $template): string
@@ -487,9 +510,8 @@ class Renderer
             $token = FormRegistry::getInstance()->getTokenFor($class, $name);
             if (!$token) return '#';
             $router = Router::getInstance();
-            $path = $router->url('forms.submit', ['token' => $token]); // named route
-            $base = rtrim($router->getBasePath() ?: '', '/');
-            return ($base !== '' ? $base : '') . $path;
+            // named route
+            return $router->url('forms.submit', ['token' => $token]);
         }, ['needs_context' => true]));
 
         // CSRF hidden input field
