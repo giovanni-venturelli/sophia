@@ -108,8 +108,8 @@ $registry = ComponentRegistry::getInstance();
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
 $renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'it', true);
-$renderer->addGlobalStyle('/test-route/css/style.css');
-$renderer->addGlobalScripts('/test-route/js/scripts.js');
+$renderer->addGlobalStyle('css/style.css');
+$renderer->addGlobalScripts('js/scripts.js');
 
 /** @var Router $router */
 $router = Injector::inject(Router::class);

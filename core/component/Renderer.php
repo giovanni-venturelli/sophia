@@ -106,12 +106,23 @@ class Renderer
     public function addGlobalStyle(string $css): void
     {
         $styleId = 'globalStyle-' . uniqid();
-        $this->globalStyles[$styleId] = $css;;
+        $path = $css;
+        $base = Router::getInstance()->getBasePath());
+        if (trim( $base !== '')) {
+        $path = $base . '/' . $path;
+        }
+        $this->globalStyles[$styleId] = $path;
     }
     public function addGlobalScripts(string $js): void
     {
         $scriptId = 'globalScript-' . uniqid();
-        $this->globalScripts[$scriptId] = $js;;
+
+        $path = $js;
+        $base = Router::getInstance()->getBasePath());
+        if (trim( $base !== '')) {
+            $path = $base . '/' . $path;
+        }
+        $this->globalScripts[$scriptId] = $path;
     }
     public function addGlobalMetaTags(array $tags): void
     {
