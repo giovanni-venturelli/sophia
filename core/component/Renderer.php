@@ -117,6 +117,10 @@ class Renderer
     {
         $scriptId = 'globalScript-' . uniqid();
 
+        if(str_starts_with($js, 'http')){
+            $this->globalScripts[$scriptId] = $js;
+            return;
+        }
         $path = $js;
         $base = Router::getInstance()->getBasePath();
         if (trim( $base !== '')) {
