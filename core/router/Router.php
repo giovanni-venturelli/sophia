@@ -64,7 +64,7 @@ class Router
         if (strtoupper($method) === 'POST') {
             foreach ($this->routes as $route) {
                 $routePath = $this->normalizePath($route['path'] ?? '');
-                $match = $this->matchPathWithParams($routePath, $uri);
+                $match = $this->matchPathWithParams($routePath, $uri, $route);
                 if ($match && isset($route['callback']) && is_callable($route['callback'])) {
                     [$params] = $match;
                     call_user_func($route['callback'], $params, $route);
@@ -431,7 +431,7 @@ class Router
         }
 
         // Altrimenti prova a matchare questo nodo come leaf
-        $match = $this->matchPathWithParams($fullPath, $requestPath);
+        $match = $this->matchPathWithParams($fullPath, $requestPath, $node);
         if ($match) {
             [$params] = $match;
             return [[$node], $params];
@@ -450,34 +450,48 @@ class Router
 
         if (!empty($route['children']) && is_array($route['children'])) {
             $parentPath = $this->normalizePath($routePath);
-            if ($path === $parentPath || str_starts_with($path, $parentPath . '/')) {
-                $rest = trim(substr($path, strlen($parentPath)), '/');
-                foreach ($route['children'] as $child) {
-                    $childPath = $this->normalizePath($child['path'] ?? '');
-                    $fullChildPath = $parentPath;
-                    if ($childPath !== '') {
-                        $fullChildPath .= '/' . $childPath;
-                    }
-                    $match = $this->matchPathWithParams($fullChildPath, $path);
-                    if ($match) {
-                        [$params] = $match;
 
-                        // 🔥 MERGE canActivate: parent + child
-                        $parentGuards = $route['canActivate'] ?? [];
-                        $childGuards = $child['canActivate'] ?? [];
+            // 🔥 Verifica pathMatch del parent
+            $parentPathMatch = $route['pathMatch'] ?? 'prefix';
 
-                        $mergedRoute = array_merge($route, $child);
-                        $mergedRoute['canActivate'] = array_merge($parentGuards, $childGuards);
+            if ($parentPathMatch === 'full') {
+                // Con pathMatch='full' il parent deve matchare esattamente
+                if ($path !== $parentPath) {
+                    return null;
+                }
+            } else {
+                // Con pathMatch='prefix' (default) il parent può essere un prefisso
+                if ($path !== $parentPath && !str_starts_with($path, $parentPath . '/')) {
+                    return null;
+                }
+            }
 
-                        unset($mergedRoute['children']);
-                        return [$mergedRoute, $params];
-                    }
+            $rest = trim(substr($path, strlen($parentPath)), '/');
+            foreach ($route['children'] as $child) {
+                $childPath = $this->normalizePath($child['path'] ?? '');
+                $fullChildPath = $parentPath;
+                if ($childPath !== '') {
+                    $fullChildPath .= '/' . $childPath;
+                }
+                $match = $this->matchPathWithParams($fullChildPath, $path, $child);
+                if ($match) {
+                    [$params] = $match;
+
+                    // 🔥 MERGE canActivate: parent + child
+                    $parentGuards = $route['canActivate'] ?? [];
+                    $childGuards = $child['canActivate'] ?? [];
+
+                    $mergedRoute = array_merge($route, $child);
+                    $mergedRoute['canActivate'] = array_merge($parentGuards, $childGuards);
+
+                    unset($mergedRoute['children']);
+                    return [$mergedRoute, $params];
                 }
             }
         }
 
         $routePath = $this->normalizePath($routePath);
-        $match = $this->matchPathWithParams($routePath, $path);
+        $match = $this->matchPathWithParams($routePath, $path, $route);
         if ($match) {
             [$params] = $match;
             return [$route, $params];
@@ -491,27 +505,62 @@ class Router
         return trim(trim($path), '/');
     }
 
-    private function matchPathWithParams(string $routePath, string $requestPath): ?array
+    /**
+     * 🔥 Match path con supporto per pathMatch: 'full' | 'prefix'
+     *
+     * @param string $routePath Il path della route normalizzato
+     * @param string $requestPath Il path della richiesta normalizzato
+     * @param array $route La configurazione della route (per leggere pathMatch)
+     * @return array|null Array con i parametri se match, null altrimenti
+     */
+    private function matchPathWithParams(string $routePath, string $requestPath, array $route = []): ?array
     {
+        $pathMatch = $route['pathMatch'] ?? 'prefix';
+
         $routeSegments = $routePath === '' ? [] : explode('/', $routePath);
         $requestSegments = $requestPath === '' ? [] : explode('/', $requestPath);
 
-        if (count($routeSegments) !== count($requestSegments)) {
-            return null;
+        // 🔥 pathMatch: 'full' - deve matchare esattamente (come Angular)
+        if ($pathMatch === 'full') {
+            if (count($routeSegments) !== count($requestSegments)) {
+                return null;
+            }
+        }
+        // pathMatch: 'prefix' (default) - può matchare un prefisso
+        else {
+            // Se la route ha più segmenti della richiesta, non può matchare
+            if (count($routeSegments) > count($requestSegments)) {
+                return null;
+            }
         }
 
         $params = [];
         foreach ($routeSegments as $index => $segment) {
+            // Se siamo oltre i segmenti della richiesta, non matcha
+            if (!isset($requestSegments[$index])) {
+                return null;
+            }
+
             $value = $requestSegments[$index];
+
+            // Parametro dinamico (:param)
             if (str_starts_with($segment, ':')) {
                 $paramName = substr($segment, 1);
                 $params[$paramName] = $value;
                 continue;
             }
+
+            // Segmento statico - deve matchare esattamente
             if ($segment !== $value) {
                 return null;
             }
         }
+
+        // 🔥 Con pathMatch='full', verifica che non ci siano segmenti extra
+        if ($pathMatch === 'full' && count($requestSegments) > count($routeSegments)) {
+            return null;
+        }
+
         return [$params];
     }
 
