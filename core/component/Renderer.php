@@ -320,8 +320,10 @@ class Renderer
         // 🔥 Raccogli styles globalmente invece di iniettarli inline
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
-            $styleId = 'style-' . uniqid();
-            $this->componentStyles[$styleId] = $cssContent;
+            $styleId = 'style-' . $proxy->instance::class;
+            if(!isset($this->componentStyles[$styleId])) {
+                $this->componentStyles[$styleId] = $cssContent;
+            }
         }
 
         // 🔥 Raccogli scripts globalmente
