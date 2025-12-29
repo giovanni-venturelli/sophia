@@ -347,18 +347,25 @@ class Router
 
     public function url(string $name, array $params = []): string
     {
-        $route = $this->findRouteByName($name);
-        if (!$route) {
+        $result = $this->findRouteAndFullPath($name);
+        if (!$result) {
             return '#';
         }
 
-        $path = $this->normalizePath($route['path'] ?? '');
+        $route = $result['route'];
+        $path = $result['fullPath'];
+
+        // Normalizza il percorso (rimuove slash iniziali/finali)
+        $path = $this->normalizePath($path);
+
+        // Aggiunge il basePath
         if (trim($this->basePath) !== '') {
             $path = implode('/', [$this->basePath, $path]);
         }
+
+        // Sostituisce i parametri
         if ($path !== '') {
             $segments = explode('/', $path);
-
             foreach ($segments as $i => $segment) {
                 if (str_starts_with($segment, ':')) {
                     $paramName = substr($segment, 1);
@@ -370,7 +377,64 @@ class Router
             }
             $path = implode('/', $segments);
         }
+
         return '/' . ltrim($path, '/');
+    }
+
+    /**
+     * 🔥 CERCA ROUTE PER NOME E RESTITUISCE LA ROUTE CON IL PERCORSO COMPLETO
+     */
+    private function findRouteAndFullPath(string $name, array $routes = null, string $parentPath = ''): ?array
+    {
+        $routes = $routes ?? $this->routes;
+        foreach ($routes as $route) {
+            $currentPath = $route['path'] ?? '';
+            $fullPath = $parentPath;
+            if ($currentPath !== '') {
+                if ($fullPath !== '') {
+                    $fullPath .= '/' . $currentPath;
+                } else {
+                    $fullPath = $currentPath;
+                }
+            }
+
+            if (($route['name'] ?? null) === $name) {
+                return [
+                    'route' => $route,
+                    'fullPath' => $fullPath
+                ];
+            }
+
+            if (!empty($route['children'])) {
+                $found = $this->findRouteAndFullPath($name, $route['children'], $fullPath);
+                if ($found) {
+                    return $found;
+                }
+            }
+
+            // 🔥 CERCA NELLE ROUTES IMPORTATE (se esiste la proprietà 'imports')
+            if (!empty($route['imports'])) {
+                foreach ($route['imports'] as $importedRoute) {
+                    if (is_array($importedRoute) && !empty($importedRoute['children'])) {
+                        $found = $this->findRouteAndFullPath($name, $importedRoute['children'], $fullPath);
+                        if ($found) {
+                            return $found;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 🔥 CERCA ROUTE PER NOME (mantenuto per compatibilità)
+     */
+    private function findRouteByName(string $name): ?array
+    {
+        $result = $this->findRouteAndFullPath($name);
+        return $result ? $result['route'] : null;
     }
 
     // 🔍 MATCHING ENGINE
@@ -575,16 +639,6 @@ class Router
         }
 
         return [$params];
-    }
-
-    private function findRouteByName(string $name): ?array
-    {
-        foreach ($this->routes as $route) {
-            if (($route['name'] ?? null) === $name) {
-                return $route;
-            }
-        }
-        return null;
     }
 
     private function handleNotFound(): void
