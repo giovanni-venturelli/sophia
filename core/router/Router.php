@@ -418,7 +418,8 @@ class Router
         $nodePath = $this->normalizePath($node['path'] ?? '');
         $fullPath = trim(($accumulated !== '' ? ($accumulated . '/') : '') . $nodePath, '/');
 
-        // Prima cerca nei figli per ottenere il match più profondo
+        // 🔥 ANGULAR BEHAVIOR: Se questo nodo ha children, DEVE matchare uno dei children
+        // altrimenti non restituire questo nodo come valido
         if (!empty($node['children']) && is_array($node['children'])) {
             foreach ($node['children'] as $child) {
                 $res = $this->matchNodeChain($child, $requestPath, $fullPath);
@@ -428,9 +429,11 @@ class Router
                     return [$chain, $params];
                 }
             }
+            // 🔥 NESSUN CHILD HA MATCHATO: non restituire questo nodo
+            return null;
         }
 
-        // Altrimenti prova a matchare questo nodo come leaf
+        // Se non ha children, prova a matchare questo nodo come leaf
         $match = $this->matchPathWithParams($fullPath, $requestPath, $node);
         if ($match) {
             [$params] = $match;
@@ -448,25 +451,23 @@ class Router
             return [$route, []];
         }
 
+        // 🔥 ANGULAR BEHAVIOR: Se la route ha children, cerca SOLO nei children
         if (!empty($route['children']) && is_array($route['children'])) {
             $parentPath = $this->normalizePath($routePath);
-
-            // 🔥 Verifica pathMatch del parent
             $parentPathMatch = $route['pathMatch'] ?? 'prefix';
 
+            // Verifica se il path della richiesta è compatibile con il parent
             if ($parentPathMatch === 'full') {
-                // Con pathMatch='full' il parent deve matchare esattamente
-                if ($path !== $parentPath) {
+                if ($path !== $parentPath && !str_starts_with($path, $parentPath . '/')) {
                     return null;
                 }
             } else {
-                // Con pathMatch='prefix' (default) il parent può essere un prefisso
                 if ($path !== $parentPath && !str_starts_with($path, $parentPath . '/')) {
                     return null;
                 }
             }
 
-            $rest = trim(substr($path, strlen($parentPath)), '/');
+            // Cerca nei children
             foreach ($route['children'] as $child) {
                 $childPath = $this->normalizePath($child['path'] ?? '');
                 $fullChildPath = $parentPath;
@@ -488,8 +489,12 @@ class Router
                     return [$mergedRoute, $params];
                 }
             }
+
+            // 🔥 NESSUN CHILD HA MATCHATO: ritorna null (non il parent)
+            return null;
         }
 
+        // Route senza children: matching normale
         $routePath = $this->normalizePath($routePath);
         $match = $this->matchPathWithParams($routePath, $path, $route);
         if ($match) {
