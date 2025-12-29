@@ -447,11 +447,8 @@ class Router
     {
         $routePath = $route['path'] ?? '';
 
-        if ($routePath === '*' || $routePath === '') {
-            return [$route, []];
-        }
-
-        // 🔥 ANGULAR BEHAVIOR: Se la route ha children, cerca SOLO nei children
+        // 🔥 MODIFICA: Se la route ha children, non restituirla immediatamente se ha path '' o '*'
+        // Invece, deve cercare di matchare i children.
         if (!empty($route['children']) && is_array($route['children'])) {
             $parentPath = $this->normalizePath($routePath);
             $parentPathMatch = $route['pathMatch'] ?? 'prefix';
@@ -472,7 +469,11 @@ class Router
                 $childPath = $this->normalizePath($child['path'] ?? '');
                 $fullChildPath = $parentPath;
                 if ($childPath !== '') {
-                    $fullChildPath .= '/' . $childPath;
+                    if ($fullChildPath !== '') {
+                        $fullChildPath .= '/' . $childPath;
+                    } else {
+                        $fullChildPath = $childPath;
+                    }
                 }
                 $match = $this->matchPathWithParams($fullChildPath, $path, $child);
                 if ($match) {
@@ -492,6 +493,13 @@ class Router
 
             // 🔥 NESSUN CHILD HA MATCHATO: ritorna null (non il parent)
             return null;
+        }
+
+        // 🔥 MODIFICA: Solo le route SENZA children possono essere considerate con path '' o '*'
+        if (empty($route['children'])) {
+            if ($routePath === '*' || $routePath === '') {
+                return [$route, []];
+            }
         }
 
         // Route senza children: matching normale
