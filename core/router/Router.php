@@ -418,22 +418,22 @@ class Router
         $nodePath = $this->normalizePath($node['path'] ?? '');
         $fullPath = trim(($accumulated !== '' ? ($accumulated . '/') : '') . $nodePath, '/');
 
-        // 🔥 ANGULAR BEHAVIOR: Se questo nodo ha children, DEVE matchare uno dei children
-        // altrimenti non restituire questo nodo come valido
+        // 🔥 ANGULAR BEHAVIOR: Se questo nodo ha children, cerca SOLO nei children
         if (!empty($node['children']) && is_array($node['children'])) {
             foreach ($node['children'] as $child) {
                 $res = $this->matchNodeChain($child, $requestPath, $fullPath);
                 if ($res) {
                     [$chain, $params] = $res;
+                    // Solo se il child ha matchato, includiamo il parent
                     array_unshift($chain, $node);
                     return [$chain, $params];
                 }
             }
-            // 🔥 NESSUN CHILD HA MATCHATO: non restituire questo nodo
+            // 🔥 Nessun child ha matchato: questo parent non è valido
             return null;
         }
 
-        // Se non ha children, prova a matchare questo nodo come leaf
+        // Nodo leaf: verifica il match diretto
         $match = $this->matchPathWithParams($fullPath, $requestPath, $node);
         if ($match) {
             [$params] = $match;
