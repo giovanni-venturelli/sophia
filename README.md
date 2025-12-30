@@ -115,7 +115,7 @@ $renderer->addGlobalScripts('js/scripts.js');
 $router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
-$router->setBasePath('/test-route'); // optional, if app lives in a subfolder
+$router->setBasePath('/sophia'); // optional, if app lives in a subfolder
 
 require __DIR__ . '/routes.php';
 $router->dispatch();
@@ -291,7 +291,7 @@ Then open:
 Notes
 -----
 - The demo reuses the project folders `pages/`, `Shared/`, `services/`, `config/`, `css/`, `js/`, `cache/` from the repo root.
-- The router base path in the demo is set to `/test-route/demo`. If you serve it at a different path, update `$basePath` in `demo/index.php` and the global asset paths.
+- The router base path in the demo is set to `/sophia/demo`. If you serve it at a different path, update `$basePath` in `demo/index.php` and the global asset paths.
 - The package requires PHP >= 8.1; the demo also requires `vlucas/phpdotenv` for `.env` loading.
 
 Publishing to Packagist
@@ -333,7 +333,7 @@ Twig template:
   <!-- fields -->
 </form>
 ```
-The `form_action('send')` helper generates a URL like `/test-route/forms/submit/<token>` (or `/test-route/demo/...` in the demo). Make sure the base path is set in `index.php` and not in `routes.php`.
+The `form_action('send')` helper generates a URL like `/sophia/forms/submit/<token>` (or `/sophia/demo/...` in the demo). Make sure the base path is set in `index.php` and not in `routes.php`.
 
 Named routes — quick tip
 ------------------------

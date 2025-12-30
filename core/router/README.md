@@ -65,7 +65,7 @@ $renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'it', true);
 $router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
-$router->setBasePath('/test-route'); // optional, if app lives in a subfolder
+$router->setBasePath('/sophia'); // optional, if app lives in a subfolder
 
 require __DIR__ . '/routes.php';
 $router->dispatch();
@@ -236,12 +236,12 @@ You may also pass guard instances (useful when they require constructor args).
 
 Base path
 ---------
-If your app is served under a subfolder (e.g., `/test-route`), set a base path in your bootstrap (not inside `routes.php`):
+If your app is served under a subfolder (e.g., `/sophia`), set a base path in your bootstrap (not inside `routes.php`):
 ```php
-$router->setBasePath('/test-route');
+$router->setBasePath('/sophia');
 ```
 Guidelines:
-- Set it only once in `index.php` (or `demo/index.php`). Do NOT set it in `routes.php` to avoid double prefixes like `/test-route/test-route/...`.
+- Set it only once in `index.php` (or `demo/index.php`). Do NOT set it in `routes.php` to avoid double prefixes like `/sophia/sophia/...`.
 - Matching will ignore the base path prefix transparently.
 - `url(name, params)` returns app-relative URLs (starting with `/`) already prefixed with the base path when appropriate.
 

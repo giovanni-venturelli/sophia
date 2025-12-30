@@ -8,7 +8,7 @@ use Sophia\Router\Router;
 
 require __DIR__ . '/vendor/autoload.php';
 
-$basePath = '/test-route';
+$basePath = '/sophia';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
@@ -28,8 +28,8 @@ $cachePath     = __DIR__ . '/cache/twig';
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
 $renderer->configure($templatesPath, $cachePath, 'it', true);
-$renderer->addGlobalStyle('/test-route/css/style.css');
-$renderer->addGlobalScripts('/test-route/js/scripts.js');
+$renderer->addGlobalStyle('/sophia/css/style.css');
+$renderer->addGlobalScripts('/sophia/js/scripts.js');
 
 /** @var Router $router */
 $router = Injector::inject(Router::class);

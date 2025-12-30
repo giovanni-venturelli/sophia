@@ -11,7 +11,7 @@ require __DIR__ . '/vendor/autoload.php';
 $projectRoot = dirname(__DIR__);
 
 // Base path for the demo when served under a subfolder, adjust if needed
-$basePath = '/test-route/demo';
+$basePath = '/sophia/demo';
 
 // Load environment from project root (so you can reuse existing .env)
 if (class_exists(Dotenv\Dotenv::class)) {
@@ -41,8 +41,8 @@ $renderer->setRegistry($registry);
 $renderer->configure($templatesPath, $cachePath, 'it', true);
 
 // Reuse global assets from project root
-$renderer->addGlobalStyle('/test-route/css/style.css');
-$renderer->addGlobalScripts('/test-route/js/scripts.js');
+$renderer->addGlobalStyle('/sophia/css/style.css');
+$renderer->addGlobalScripts('/sophia/js/scripts.js');
 
 /** @var Router $router */
 $router = Injector::inject(Router::class);
