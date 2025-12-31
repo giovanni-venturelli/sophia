@@ -1,35 +1,55 @@
 <?php
-namespace Sophia\Database;
 
-use Sophia\Database\Drivers\DriverInterface;
+namespace Sophia\DB;
 
-class QueryBuilder {
+use Sophia\DB\Driver\DriverInterface;
+
+class QueryBuilder
+{
     private DriverInterface $driver;
     private string $table;
+    private array $selectColumns = ['*'];  // ✅ NUOVO: Colonne da selezionare
     private array $wheres = [];
     private array $joins = [];
     private ?string $orderBy = null;
     private ?int $limit = null;
     private ?int $offset = null;
 
-    public function __construct(DriverInterface $driver, string $table) {
+    public function __construct(DriverInterface $driver, string $table)
+    {
         $this->driver = $driver;
         $this->table = $table;
     }
 
+    // ✅ NUOVO: Specifica colonne da selezionare
+    public function select(array|string $columns): self
+    {
+        $this->selectColumns = is_array($columns) ? $columns : func_get_args();
+        return $this;
+    }
+
+    // ✅ NUOVO: Alias per select (compatibilità)
+    public function columns(array|string $columns): self
+    {
+        return $this->select($columns);
+    }
+
     // WHERE
-    public function where(string $column, $value, string $operator = '='): self {
+    public function where(string $column, $value, string $operator = '='): self
+    {
         $this->wheres[] = [$column, $value, $operator];
         return $this;
     }
 
-    public function whereIn(string $column, array $values): self {
+    public function whereIn(string $column, array $values): self
+    {
         $this->wheres[] = ['IN', $column, $values];
         return $this;
     }
 
     // JOIN
-    public function join(string $table, string $first, string $operator, string $second, string $type = 'INNER'): self {
+    public function join(string $table, string $first, string $operator, string $second, string $type = 'INNER'): self
+    {
         $this->joins[] = [
             'table' => $table,
             'first' => $first,
@@ -40,109 +60,125 @@ class QueryBuilder {
         return $this;
     }
 
-    public function leftJoin(string $table, string $first, string $operator, string $second): self {
+    public function leftJoin(string $table, string $first, string $operator, string $second): self
+    {
         return $this->join($table, $first, $operator, $second, 'LEFT');
     }
 
-    public function rightJoin(string $table, string $first, string $operator, string $second): self {
+    public function rightJoin(string $table, string $first, string $operator, string $second): self
+    {
         return $this->join($table, $first, $operator, $second, 'RIGHT');
     }
 
     // ORDER / LIMIT
-    public function orderBy(string $column, string $direction = 'ASC'): self {
-        $this->orderBy = "`$column` " . strtoupper($direction);
+    public function orderBy(string $column, string $direction = 'ASC'): self
+    {
+        $this->orderBy = $column . ' ' . strtoupper($direction);
         return $this;
     }
 
-    public function limit(int $limit): self {
+    public function limit(int $limit): self
+    {
         $this->limit = $limit;
         return $this;
     }
 
-    public function offset(int $offset): self {
+    public function offset(int $offset): self
+    {
         $this->offset = $offset;
         return $this;
     }
 
-    // SELECT
-    public function get(): array {
+    // ✅ AGGIORNATO: Usa selectColumns
+    public function get(): array
+    {
         return $this->driver->query($this->buildSelectSql(), $this->buildSelectParams());
     }
 
-    public function first(): ?array {
-        $results = $this->limit(1)->get();
-        return $results[0] ?? null;
+    public function first(): ?array
+    {
+        return $this->limit(1)->get()[0] ?? null;
     }
 
-    public function count(): int {
+    // ✅ AGGIORNATO: Usa selectColumns per COUNT
+    public function count(): int
+    {
         $sql = $this->buildSelectSql(true);
         $params = $this->buildSelectParams();
         $result = $this->driver->query($sql, $params);
         return (int) ($result[0]['count'] ?? 0);
     }
 
-    // INSERT/UPDATE/DELETE
-    public function create(array $data): int {
-        $columns = implode('`, `', array_keys($data));
+    // INSERT/UPDATE/DELETE (invariati)
+    public function create(array $data): int
+    {
+        $columns = implode(', ', array_keys($data));
         $placeholders = implode(', ', array_fill(0, count($data), '?'));
-        $sql = "INSERT INTO `{$this->table}` (`$columns`) VALUES ($placeholders)";
-
+        $sql = "INSERT INTO {$this->table} ({$columns}) VALUES ({$placeholders})";
         $this->driver->exec($sql, array_values($data));
         return $this->driver->lastInsertId();
     }
 
-    public function update(array $data): int {
+    public function update(array $data): int
+    {
         $setParts = [];
         $params = [];
-
         foreach ($data as $column => $value) {
-            $setParts[] = "`$column` = ?";
+            $setParts[] = "{$column} = ?";
             $params[] = $value;
         }
-
         $setClause = implode(', ', $setParts);
         $whereClause = $this->buildWhereClause($params);
-
-        $sql = "UPDATE `{$this->table}` SET $setClause $whereClause";
+        $sql = "UPDATE {$this->table} SET {$setClause} {$whereClause}";
         return $this->driver->exec($sql, $params);
     }
 
-    public function delete(): int {
+    public function delete(): int
+    {
         $whereClause = $this->buildWhereClause();
-        $sql = "DELETE FROM `{$this->table}` $whereClause";
+        $sql = "DELETE FROM {$this->table} {$whereClause}";
         return $this->driver->exec($sql, $this->buildSelectParams());
     }
 
-    // PRIVATE HELPERS
-    private function buildSelectSql(bool $count = false): string {
-        $columns = $count ? 'COUNT(*) as count' : '*';
-        $sql = "SELECT $columns FROM `{$this->table}`";
+    // ✅ AGGIORNATO: Supporta selectColumns e count mode
+    private function buildSelectSql(bool $count = false): string
+    {
+        $columns = $count
+            ? 'COUNT(*) as count'
+            : implode(', ', array_map(fn($col) => is_string($col) ? $col : '*', $this->selectColumns));
+
+        $sql = "SELECT {$columns} FROM {$this->table}";
 
         // JOINS
         foreach ($this->joins as $join) {
-            $sql .= " {$join['type']} JOIN `{$join['table']}` ON ";
-            $sql .= "`{$join['table']}`.`{$join['first']}` {$join['operator']} `{$join['second']}`";
+            $sql .= " {$join['type']} JOIN {$join['table']} ON {$join['table']}.{$join['first']} {$join['operator']} {$join['second']}";
         }
 
         // WHERE
         $whereSql = $this->buildWhereClause();
-        if ($whereSql) $sql .= $whereSql;
+        if ($whereSql) {
+            $sql .= ' ' . $whereSql;
+        }
 
         // ORDER
-        if ($this->orderBy) $sql .= " ORDER BY {$this->orderBy}";
+        if ($this->orderBy) {
+            $sql .= ' ORDER BY ' . $this->orderBy;
+        }
 
         // LIMIT/OFFSET
         if ($this->limit) {
-            $sql .= " LIMIT " . $this->limit;
-            if ($this->offset !== null) $sql .= " OFFSET " . $this->offset;
+            $sql .= ' LIMIT ' . $this->limit;
+            if ($this->offset !== null) {
+                $sql .= ' OFFSET ' . $this->offset;
+            }
         }
 
         return $sql;
     }
 
-    private function buildSelectParams(): array {
+    private function buildSelectParams(): array
+    {
         $params = [];
-
         foreach ($this->wheres as $where) {
             if ($where[0] === 'IN') {
                 $params = array_merge($params, $where[2]);
@@ -150,23 +186,29 @@ class QueryBuilder {
                 $params[] = $where[1];
             }
         }
-
         return $params;
     }
 
-    private function buildWhereClause(): string {
-        if (empty($this->wheres)) return '';
+    private function buildWhereClause(?array &$params = null): string
+    {
+        if (empty($this->wheres)) {
+            return '';
+        }
 
         $conditions = [];
         foreach ($this->wheres as $where) {
             if ($where[0] === 'IN') {
                 $placeholders = implode(',', array_fill(0, count($where[2]), '?'));
-                $conditions[] = "`{$where[1]}` IN ($placeholders)";
+                $conditions[] = "{$where[1]} IN ({$placeholders})";
             } else {
                 $op = match($where[2]) {
-                    '=' => '=', '>' => '>', '<' => '<', '!=' => '!=', 'LIKE' => 'LIKE', default => '='
+                    '!=' => '<>',
+                    '!==' => '<>',
+                    '!' => 'NOT',
+                    'LIKE' => 'LIKE',
+                    default => $where[2]
                 };
-                $conditions[] = "`{$where[0]}` $op ?";
+                $conditions[] = "{$where[0]} {$op} ?";
             }
         }
 
