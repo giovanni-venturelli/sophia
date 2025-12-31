@@ -108,11 +108,12 @@ class Renderer
         $styleId = 'globalStyle-' . uniqid();
         $path = $css;
         $base = Router::getInstance()->getBasePath();
-        if (trim( $base !== '')) {
-        $path = $base . '/' . $path;
+        if (trim($base) !== '') {
+            $path = $base . '/' . $path;
         }
         $this->globalStyles[$styleId] = $path;
     }
+
     public function addGlobalScripts(string $js): void
     {
         $scriptId = 'globalScript-' . uniqid();
@@ -123,7 +124,7 @@ class Renderer
         }
         $path = $js;
         $base = Router::getInstance()->getBasePath();
-        if (trim( $base !== '')) {
+        if (trim($base) !== '') {
             $path = $base . '/' . $path;
         }
         $this->globalScripts[$scriptId] = $path;
@@ -320,7 +321,7 @@ class Renderer
         // 🔥 Raccogli styles globalmente invece di iniettarli inline
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
-            $styleId = 'style-' . $proxy->instance::class;
+            $styleId = 'style-' . MD5($proxy->instance::class);
             if(!isset($this->componentStyles[$styleId])) {
                 $this->componentStyles[$styleId] = $cssContent;
             }
@@ -397,22 +398,35 @@ class Renderer
     }
 
     /**
-     * 🔥 AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot
+     * 🔥 AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot + metodi callable
      */
     private function extractComponentData(ComponentProxy $proxy): array
     {
+
         $data = [];
         $instance = $proxy->instance;
         $reflection = new ReflectionObject($instance);
 
-        // 🔥 AUTO-GENERATE: slot helpers automatici (has* e slot functions)
+        // Slot helpers (già ok)
         $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
         $data = array_merge($data, $slotHelpers);
 
+        // ✅ NUOVO: Oggetto component con tutti i metodi pubblici
+        $componentContext = new class($instance) {
+            public function __construct(private $instance) {}
+            public function __call(string $name, array $arguments) {
+                $reflection = new ReflectionObject($this->instance);
+                if ($method = $reflection->getMethod($name)) {
+                    return $method->invoke($this->instance, ...$arguments);
+                }
+                throw new \BadMethodCallException("Method $name not found");
+            }
+        };
+        $data['component'] = $componentContext;
+
+        // Proprietà pubbliche
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
             $value = $prop->getValue($instance);
-
-            // 🔥 Se è SlotContent, estrai l'HTML o stringa vuota
             if ($value instanceof SlotContent) {
                 $data[$prop->getName()] = $value->html;
             } else {
@@ -420,15 +434,13 @@ class Renderer
             }
         }
 
-        // Metodi getter → dati
+        // Getter methods
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (str_starts_with($method->getName(), 'get') &&
-                $method->getNumberOfRequiredParameters() === 0) {
+            if (str_starts_with($method->getName(), 'get') && $method->getNumberOfRequiredParameters() === 0) {
                 $propertyName = lcfirst(substr($method->getName(), 3));
                 $data[$propertyName] = $method->invoke($instance);
             }
         }
-
         // 🔥 Form handlers: registra i metodi marcati con #[FormHandler('name')]
         $formTokens = [];
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
@@ -458,6 +470,33 @@ class Renderer
         }
 
         return $data;
+    }
+
+    /**
+     * 🔥 NUOVO: Genera callables per tutti i metodi pubblici del componente
+     */
+    private function generateMethodCallables(ReflectionObject $reflection, object $instance): array
+    {
+        $callables = [];
+
+        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            $methodName = $method->getName();
+
+            // Salta costruttore, magic methods e lifecycle hooks
+            if ($methodName === '__construct'
+                || str_starts_with($methodName, '__')
+                || $methodName === 'onInit'
+                || $methodName === 'onDestroy') {
+                continue;
+            }
+
+            // Crea una closure che chiama il metodo
+            $callables[$methodName] = function (...$args) use ($instance, $method) {
+                return $method->invoke($instance, ...$args);
+            };
+        }
+
+        return $callables;
     }
 
     /**
