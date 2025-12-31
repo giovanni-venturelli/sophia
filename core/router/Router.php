@@ -438,7 +438,7 @@ class Router
     }
 
     // 🔍 MATCHING ENGINE
-    private function getCurrentPath(): string
+    public function getCurrentPath(): string
     {
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
         $path = parse_url($uri, PHP_URL_PATH) ?: '/';
