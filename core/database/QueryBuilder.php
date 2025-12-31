@@ -1,8 +1,9 @@
 <?php
 
-namespace Sophia\DB;
+namespace Sophia\Database;
 
-use Sophia\DB\Driver\DriverInterface;
+
+use Sophia\Database\Drivers\DriverInterface;
 
 class QueryBuilder
 {
