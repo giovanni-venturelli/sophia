@@ -357,7 +357,7 @@ class Renderer
     }
 
     /**
-     * 🔥 AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot
+     * 🔥 AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot + metodi callable
      */
     private function extractComponentData(ComponentProxy $proxy): array
     {
@@ -368,6 +368,10 @@ class Renderer
         // 🔥 AUTO-GENERATE: slot helpers automatici (has* e slot functions)
         $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
         $data = array_merge($data, $slotHelpers);
+
+        // 🔥 NUOVO: Aggiungi tutti i metodi pubblici come funzioni callable
+        $methodCallables = $this->generateMethodCallables($reflection, $instance);
+        $data = array_merge($data, $methodCallables);
 
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
             $value = $prop->getValue($instance);
@@ -418,6 +422,33 @@ class Renderer
         }
 
         return $data;
+    }
+
+    /**
+     * 🔥 NUOVO: Genera callables per tutti i metodi pubblici del componente
+     */
+    private function generateMethodCallables(ReflectionObject $reflection, object $instance): array
+    {
+        $callables = [];
+
+        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            $methodName = $method->getName();
+
+            // Salta costruttore, magic methods e lifecycle hooks
+            if ($methodName === '__construct'
+                || str_starts_with($methodName, '__')
+                || $methodName === 'onInit'
+                || $methodName === 'onDestroy') {
+                continue;
+            }
+
+            // Crea una closure che chiama il metodo
+            $callables[$methodName] = function (...$args) use ($instance, $method) {
+                return $method->invoke($instance, ...$args);
+            };
+        }
+
+        return $callables;
     }
 
     /**
