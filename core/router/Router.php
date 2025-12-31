@@ -4,9 +4,12 @@ namespace Sophia\Router;
 
 use Sophia\Component\ComponentRegistry;
 use Sophia\Component\Renderer;
+use Sophia\Injector\Injectable;
+use Sophia\Injector\Injector;
 use Sophia\Router\Models\MiddlewareInterface;
 use function call_user_func;
 
+#[Injectable(providedIn: 'root')]
 class Router
 {
     /** @var self|null */
@@ -35,10 +38,18 @@ class Router
      */
     public static function getInstance(): self
     {
-        if (!self::$instance) {
-            self::$instance = new self();
+        // Backward-compatible: now resolved via DI as a root singleton
+        try {
+            /** @var self $instance */
+            $instance = Injector::inject(self::class);
+            return $instance;
+        } catch (\Throwable) {
+            // Fallback to legacy singleton if Injector is not available
+            if (!self::$instance) {
+                self::$instance = new self();
+            }
+            return self::$instance;
         }
-        return self::$instance;
     }
 
     /**
@@ -53,7 +64,7 @@ class Router
         if (strtoupper($method) === 'POST') {
             foreach ($this->routes as $route) {
                 $routePath = $this->normalizePath($route['path'] ?? '');
-                $match = $this->matchPathWithParams($routePath, $uri);
+                $match = $this->matchPathWithParams($routePath, $uri, $route);
                 if ($match && isset($route['callback']) && is_callable($route['callback'])) {
                     [$params] = $match;
                     call_user_func($route['callback'], $params, $route);
@@ -119,7 +130,10 @@ class Router
                 // Trova l'indice del componente più alto (top) nella catena
                 $topIndex = null;
                 for ($i = 0; $i < count($chain); $i++) {
-                    if (isset($chain[$i]['component'])) { $topIndex = $i; break; }
+                    if (isset($chain[$i]['component'])) {
+                        $topIndex = $i;
+                        break;
+                    }
                 }
                 for ($i = count($chain) - 1; $i >= 0; $i--) {
                     $node = $chain[$i];
@@ -133,7 +147,7 @@ class Router
                         return;
                     }
                     $selector = $this->componentRegistry->lazyRegister($componentClass);
-                    $data = array_merge($this->currentParams, [ 'routeData' => $this->currentRouteData ]);
+                    $data = array_merge($this->currentParams, ['routeData' => $this->currentRouteData]);
 
                     $slotContent = $rendered !== null ? '<router-outlet name="outlet">' . $rendered . '</router-outlet>' : null;
 
@@ -239,12 +253,10 @@ class Router
                         "Guard '{$guardClass}' must implement " . MiddlewareInterface::class
                     );
                 }
-            }
-            // Se è già un'istanza, usala direttamente
+            } // Se è già un'istanza, usala direttamente
             elseif ($guardClass instanceof MiddlewareInterface) {
                 $guard = $guardClass;
-            }
-            else {
+            } else {
                 throw new \RuntimeException("Invalid guard type");
             }
 
@@ -335,12 +347,23 @@ class Router
 
     public function url(string $name, array $params = []): string
     {
-        $route = $this->findRouteByName($name);
-        if (!$route) {
+        $result = $this->findRouteAndFullPath($name);
+        if (!$result) {
             return '#';
         }
 
-        $path = $this->normalizePath($route['path'] ?? '');
+        $route = $result['route'];
+        $path = $result['fullPath'];
+
+        // Normalizza il percorso (rimuove slash iniziali/finali)
+        $path = $this->normalizePath($path);
+
+        // Aggiunge il basePath
+        if (trim($this->basePath) !== '') {
+            $path = implode('/', [$this->basePath, $path]);
+        }
+
+        // Sostituisce i parametri
         if ($path !== '') {
             $segments = explode('/', $path);
             foreach ($segments as $i => $segment) {
@@ -356,6 +379,62 @@ class Router
         }
 
         return '/' . ltrim($path, '/');
+    }
+
+    /**
+     * 🔥 CERCA ROUTE PER NOME E RESTITUISCE LA ROUTE CON IL PERCORSO COMPLETO
+     */
+    private function findRouteAndFullPath(string $name, array $routes = null, string $parentPath = ''): ?array
+    {
+        $routes = $routes ?? $this->routes;
+        foreach ($routes as $route) {
+            $currentPath = $route['path'] ?? '';
+            $fullPath = $parentPath;
+            if ($currentPath !== '') {
+                if ($fullPath !== '') {
+                    $fullPath .= '/' . $currentPath;
+                } else {
+                    $fullPath = $currentPath;
+                }
+            }
+
+            if (($route['name'] ?? null) === $name) {
+                return [
+                    'route' => $route,
+                    'fullPath' => $fullPath
+                ];
+            }
+
+            if (!empty($route['children'])) {
+                $found = $this->findRouteAndFullPath($name, $route['children'], $fullPath);
+                if ($found) {
+                    return $found;
+                }
+            }
+
+            // 🔥 CERCA NELLE ROUTES IMPORTATE (se esiste la proprietà 'imports')
+            if (!empty($route['imports'])) {
+                foreach ($route['imports'] as $importedRoute) {
+                    if (is_array($importedRoute) && !empty($importedRoute['children'])) {
+                        $found = $this->findRouteAndFullPath($name, $importedRoute['children'], $fullPath);
+                        if ($found) {
+                            return $found;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 🔥 CERCA ROUTE PER NOME (mantenuto per compatibilità)
+     */
+    private function findRouteByName(string $name): ?array
+    {
+        $result = $this->findRouteAndFullPath($name);
+        return $result ? $result['route'] : null;
     }
 
     // 🔍 MATCHING ENGINE
@@ -403,23 +482,26 @@ class Router
         $nodePath = $this->normalizePath($node['path'] ?? '');
         $fullPath = trim(($accumulated !== '' ? ($accumulated . '/') : '') . $nodePath, '/');
 
-        // Prima cerca nei figli per ottenere il match più profondo
+        // 🔥 ANGULAR BEHAVIOR: Se questo nodo ha children, cerca SOLO nei children
         if (!empty($node['children']) && is_array($node['children'])) {
             foreach ($node['children'] as $child) {
                 $res = $this->matchNodeChain($child, $requestPath, $fullPath);
                 if ($res) {
                     [$chain, $params] = $res;
+                    // Solo se il child ha matchato, includiamo il parent
                     array_unshift($chain, $node);
                     return [$chain, $params];
                 }
             }
+            // 🔥 Nessun child ha matchato: questo parent non è valido
+            return null;
         }
 
-        // Altrimenti prova a matchare questo nodo come leaf
-        $match = $this->matchPathWithParams($fullPath, $requestPath);
+        // Nodo leaf: verifica il match diretto
+        $match = $this->matchPathWithParams($fullPath, $requestPath, $node);
         if ($match) {
             [$params] = $match;
-            return [[ $node ], $params];
+            return [[$node], $params];
         }
 
         return null;
@@ -429,40 +511,64 @@ class Router
     {
         $routePath = $route['path'] ?? '';
 
-        if ($routePath === '*' || $routePath === '') {
-            return [$route, []];
-        }
-
+        // 🔥 MODIFICA: Se la route ha children, non restituirla immediatamente se ha path '' o '*'
+        // Invece, deve cercare di matchare i children.
         if (!empty($route['children']) && is_array($route['children'])) {
             $parentPath = $this->normalizePath($routePath);
-            if ($path === $parentPath || str_starts_with($path, $parentPath . '/')) {
-                $rest = trim(substr($path, strlen($parentPath)), '/');
-                foreach ($route['children'] as $child) {
-                    $childPath = $this->normalizePath($child['path'] ?? '');
-                    $fullChildPath = $parentPath;
-                    if ($childPath !== '') {
+            $parentPathMatch = $route['pathMatch'] ?? 'prefix';
+
+            // Verifica se il path della richiesta è compatibile con il parent
+            if ($parentPathMatch === 'full') {
+                if ($path !== $parentPath && !str_starts_with($path, $parentPath . '/')) {
+                    return null;
+                }
+            } else {
+                if ($path !== $parentPath && !str_starts_with($path, $parentPath . '/')) {
+                    return null;
+                }
+            }
+
+            // Cerca nei children
+            foreach ($route['children'] as $child) {
+                $childPath = $this->normalizePath($child['path'] ?? '');
+                $fullChildPath = $parentPath;
+                if ($childPath !== '') {
+                    if ($fullChildPath !== '') {
                         $fullChildPath .= '/' . $childPath;
-                    }
-                    $match = $this->matchPathWithParams($fullChildPath, $path);
-                    if ($match) {
-                        [$params] = $match;
-
-                        // 🔥 MERGE canActivate: parent + child
-                        $parentGuards = $route['canActivate'] ?? [];
-                        $childGuards = $child['canActivate'] ?? [];
-
-                        $mergedRoute = array_merge($route, $child);
-                        $mergedRoute['canActivate'] = array_merge($parentGuards, $childGuards);
-
-                        unset($mergedRoute['children']);
-                        return [$mergedRoute, $params];
+                    } else {
+                        $fullChildPath = $childPath;
                     }
                 }
+                $match = $this->matchPathWithParams($fullChildPath, $path, $child);
+                if ($match) {
+                    [$params] = $match;
+
+                    // 🔥 MERGE canActivate: parent + child
+                    $parentGuards = $route['canActivate'] ?? [];
+                    $childGuards = $child['canActivate'] ?? [];
+
+                    $mergedRoute = array_merge($route, $child);
+                    $mergedRoute['canActivate'] = array_merge($parentGuards, $childGuards);
+
+                    unset($mergedRoute['children']);
+                    return [$mergedRoute, $params];
+                }
+            }
+
+            // 🔥 NESSUN CHILD HA MATCHATO: ritorna null (non il parent)
+            return null;
+        }
+
+        // 🔥 MODIFICA: Solo le route SENZA children possono essere considerate con path '' o '*'
+        if (empty($route['children'])) {
+            if ($routePath === '*' || $routePath === '') {
+                return [$route, []];
             }
         }
 
+        // Route senza children: matching normale
         $routePath = $this->normalizePath($routePath);
-        $match = $this->matchPathWithParams($routePath, $path);
+        $match = $this->matchPathWithParams($routePath, $path, $route);
         if ($match) {
             [$params] = $match;
             return [$route, $params];
@@ -476,38 +582,63 @@ class Router
         return trim(trim($path), '/');
     }
 
-    private function matchPathWithParams(string $routePath, string $requestPath): ?array
+    /**
+     * 🔥 Match path con supporto per pathMatch: 'full' | 'prefix'
+     *
+     * @param string $routePath Il path della route normalizzato
+     * @param string $requestPath Il path della richiesta normalizzato
+     * @param array $route La configurazione della route (per leggere pathMatch)
+     * @return array|null Array con i parametri se match, null altrimenti
+     */
+    private function matchPathWithParams(string $routePath, string $requestPath, array $route = []): ?array
     {
+        $pathMatch = $route['pathMatch'] ?? 'prefix';
+
         $routeSegments = $routePath === '' ? [] : explode('/', $routePath);
         $requestSegments = $requestPath === '' ? [] : explode('/', $requestPath);
 
-        if (count($routeSegments) !== count($requestSegments)) {
-            return null;
+        // 🔥 pathMatch: 'full' - deve matchare esattamente (come Angular)
+        if ($pathMatch === 'full') {
+            if (count($routeSegments) !== count($requestSegments)) {
+                return null;
+            }
+        }
+        // pathMatch: 'prefix' (default) - può matchare un prefisso
+        else {
+            // Se la route ha più segmenti della richiesta, non può matchare
+            if (count($routeSegments) > count($requestSegments)) {
+                return null;
+            }
         }
 
         $params = [];
         foreach ($routeSegments as $index => $segment) {
+            // Se siamo oltre i segmenti della richiesta, non matcha
+            if (!isset($requestSegments[$index])) {
+                return null;
+            }
+
             $value = $requestSegments[$index];
+
+            // Parametro dinamico (:param)
             if (str_starts_with($segment, ':')) {
                 $paramName = substr($segment, 1);
                 $params[$paramName] = $value;
                 continue;
             }
+
+            // Segmento statico - deve matchare esattamente
             if ($segment !== $value) {
                 return null;
             }
         }
-        return [$params];
-    }
 
-    private function findRouteByName(string $name): ?array
-    {
-        foreach ($this->routes as $route) {
-            if (($route['name'] ?? null) === $name) {
-                return $route;
-            }
+        // 🔥 Con pathMatch='full', verifica che non ci siano segmenti extra
+        if ($pathMatch === 'full' && count($requestSegments) > count($routeSegments)) {
+            return null;
         }
-        return null;
+
+        return [$params];
     }
 
     private function handleNotFound(): void

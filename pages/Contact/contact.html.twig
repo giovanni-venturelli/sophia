@@ -1,13 +1,12 @@
 <section class="contact-page">
   <h1>{{ title }}</h1>
-
   {% if has_flash('error') %}
     <div class="alert alert-danger">{{ flash('error') }}</div>
   {% endif %}
   {% if has_flash('success') %}
     <div class="alert alert-success">{{ flash('success') }}</div>
   {% endif %}
-
+  {{ form_action('send')}}
   <form method="post" action="{{ form_action('send') }}">
     {{ csrf_field()|raw }}
 

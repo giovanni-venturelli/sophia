@@ -13,6 +13,7 @@ class Route
     private ?\Closure $callback = null;
     private array $middleware = [];
     private ?string $name = null;
+    private ?string $pathMatch = null;
     private array $data = [];
     private string $pattern;
 
@@ -28,6 +29,7 @@ class Route
         $this->componentClass = $config['component'] ?? null;
 
         $this->callback = $config['callback'] ?? null;
+        $this->pathMatch = $config['pathMatch'] ?? 'prefix'; // Default: 'prefix'
         $this->middleware = $config['middleware'] ?? [];
         $this->name = $config['name'] ?? null;
         $this->data = $config['data'] ?? [];
@@ -120,6 +122,11 @@ class Route
     public function getName(): ?string
     {
         return $this->name;
+    }
+
+    public function getPathMatch(): string
+    {
+        return $this->pathMatch ?? 'prefix';
     }
 
     public function getData(): array

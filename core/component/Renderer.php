@@ -2,6 +2,7 @@
 
 namespace Sophia\Component;
 
+use Sophia\Injector\Injectable;
 use Sophia\Injector\Injector;
 use Sophia\Router\Router;
 use ReflectionClass;
@@ -19,6 +20,7 @@ use Twig\Error\LoaderError;
 use Twig\Loader\FilesystemLoader;
 use Twig\TwigFunction;
 
+#[Injectable(providedIn: 'root')]
 class Renderer
 {
     private Environment $twig;
@@ -36,15 +38,39 @@ class Renderer
     private string $language = 'en';
 
     public function __construct(
-        ComponentRegistry $registry,
-        string            $templatesPath,
+        ?ComponentRegistry $registry = null,
+        string            $templatesPath = '',
         string            $cachePath = '',
         string            $language = 'en',
         bool              $debug = false
     )
     {
-        $this->registry = $registry;
+        $this->registry = $registry ?? ComponentRegistry::getInstance();
         $this->language = $language;
+        $this->initTwig($cachePath, $debug);
+        if ($templatesPath !== '') {
+            $this->addTemplatePath($templatesPath);
+        }
+        $this->registerCustomFunctions();
+    }
+
+    public function setRegistry(ComponentRegistry $registry): void
+    {
+        $this->registry = $registry;
+    }
+
+    public function configure(string $templatesPath, string $cachePath = '', string $language = 'en', bool $debug = false): void
+    {
+        $this->language = $language;
+        $this->templatePaths = [];
+        $this->initTwig($cachePath, $debug);
+        $this->addTemplatePath($templatesPath);
+        // Re-register functions on new Environment
+        $this->registerCustomFunctions();
+    }
+
+    private function initTwig(string $cachePath, bool $debug): void
+    {
         $loader = new FilesystemLoader();
         $this->twig = new Environment($loader, [
             'cache' => $cachePath,
@@ -52,9 +78,6 @@ class Renderer
             'debug' => $debug,
             'strict_variables' => true,
         ]);
-
-        $this->addTemplatePath($templatesPath);
-        $this->registerCustomFunctions();
     }
 
     private function resolveTemplatePath(string $componentClass, string $template): string
@@ -83,12 +106,27 @@ class Renderer
     public function addGlobalStyle(string $css): void
     {
         $styleId = 'globalStyle-' . uniqid();
-        $this->globalStyles[$styleId] = $css;;
+        $path = $css;
+        $base = Router::getInstance()->getBasePath();
+        if (trim( $base !== '')) {
+        $path = $base . '/' . $path;
+        }
+        $this->globalStyles[$styleId] = $path;
     }
     public function addGlobalScripts(string $js): void
     {
         $scriptId = 'globalScript-' . uniqid();
-        $this->globalScripts[$scriptId] = $js;;
+
+        if(str_starts_with($js, 'http')){
+            $this->globalScripts[$scriptId] = $js;
+            return;
+        }
+        $path = $js;
+        $base = Router::getInstance()->getBasePath();
+        if (trim( $base !== '')) {
+            $path = $base . '/' . $path;
+        }
+        $this->globalScripts[$scriptId] = $path;
     }
     public function addGlobalMetaTags(array $tags): void
     {
@@ -282,8 +320,10 @@ class Renderer
         // 🔥 Raccogli styles globalmente invece di iniettarli inline
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
-            $styleId = 'style-' . uniqid();
-            $this->componentStyles[$styleId] = $cssContent;
+            $styleId = 'style-' . $proxy->instance::class;
+            if(!isset($this->componentStyles[$styleId])) {
+                $this->componentStyles[$styleId] = $cssContent;
+            }
         }
 
         // 🔥 Raccogli scripts globalmente
@@ -518,9 +558,8 @@ class Renderer
             $token = FormRegistry::getInstance()->getTokenFor($class, $name);
             if (!$token) return '#';
             $router = Router::getInstance();
-            $path = $router->url('forms.submit', ['token' => $token]); // named route
-            $base = rtrim($router->getBasePath() ?: '', '/');
-            return ($base !== '' ? $base : '') . $path;
+            // named route
+            return $router->url('forms.submit', ['token' => $token]);
         }, ['needs_context' => true]));
 
         // CSRF hidden input field

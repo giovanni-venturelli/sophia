@@ -238,16 +238,21 @@ Register components with the `ComponentRegistry` and render with `Renderer`.
 ```php
 use Sophia\Component\ComponentRegistry;
 use Sophia\Component\Renderer;
+use Sophia\Injector\Injector;
 
 $registry = ComponentRegistry::getInstance();
 $registry->register(App\Pages\Home\HomeComponent::class); // auto-registers imports
 
-$renderer = new Renderer($registry, __DIR__ . '/pages', cachePath: __DIR__ . '/cache/twig');
+/** @var Renderer $renderer */
+$renderer = Injector::inject(Renderer::class);
+$renderer->setRegistry($registry);
+$renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'en', true);
 
 // Pass initial data to public properties of the root component
 $html = $renderer->renderRoot('app-home', [ 'title' => 'Welcome' ]);
 ```
 Notes:
+- `Renderer` is a root injectable (`#[Injectable(providedIn: 'root')]`). Use `Injector::inject()` to obtain it.
 - `register()` throws if the class lacks `#[Component]`.
 - `imports` listed in a component are auto-registered recursively.
 - You can call `lazyRegister(Class::class)` to register by class and receive its selector.
@@ -255,14 +260,28 @@ Notes:
 
 Router/Twig helpers
 -------------------
-The renderer exposes a couple of helpers:
-- `route_data(key?: string)` → returns current route's data or a specific value
-- `url(name, params = {})` → generates a URL by route name
+The renderer exposes a set of Twig helpers out of the box:
+- `component(selector, bindings = {}, slotContent?)` → render a child component
+- `slot(_context, name, slotContext = {})` → render named slot content provided by a parent
+- `set_title(title)` → set the page title for the current render
+- `add_meta(name, content)` → add a `<meta>` tag
+- `route_data(key?: string)` → get current route's data or a specific value
+- `url(name, params = {})` → generate a URL by route name
+- `form_action(name)` → build POST action URL for a named form in the current component
+- `csrf_field()` → hidden input with CSRF token
+- `flash(key)`, `peek_flash(key)`, `has_flash(key)` → flash message helpers
+- `form_errors(field?)` → validation errors (all or per field)
+- `old(field, default?)` → sticky old input values
 
-Example:
+Examples:
 ```twig
 <a href="{{ url('post.show', { id: post.id }) }}">Read more</a>
 <p>Category: {{ route_data('category') }}</p>
+
+<form method="post" action="{{ form_action('send') }}">
+  {{ csrf_field()|raw }}
+  {% if has_flash('error') %}<div class="alert">{{ flash('error') }}</div>{% endif %}
+</form>
 ```
 
 
@@ -332,3 +351,44 @@ This setup yields:
 - `ConnectionService` is a root singleton (shared globally).
 - `PostRepository` is scoped to `app-blog` and shared by its subtree.
 - Data flows: `BlogComponent::$latest` → bound to child `PostListComponent::$items` via `#[Input]`.
+
+
+Enhancements (Layouts, Slots, Scripts, Page skeleton)
+----------------------------------------------------
+The component system now includes several UX/productivity additions:
+
+- Layouts + outlet
+  - Create a parent layout component that renders the common shell (header/footer) and provides an `outlet` (placeholder) where the active child route content is projected.
+  - See Router → Nested routes for how the layout is attached to a route; the renderer composes the final HTML by nesting the child into the layout.
+
+- Slots & content projection
+  - Use the `component()` helper to render children and the `slot()` helper to project named content from a parent into a child.
+  - Example:
+    ```twig
+    {# Parent template #}
+    {{ component('app-card', { title: 'Hello' }, slot('content', { body: 'Lorem ipsum' })) }}
+
+    {# Child (app-card) template #}
+    <article>
+      <h3>{{ title }}</h3>
+      {{ slot(_context, 'content') }}
+    </article>
+    ```
+
+- Per‑component JavaScript
+  - Alongside `styles`, each component can declare a `scripts` array (relative to the component PHP file). The renderer loads the JS content and injects it at the end of the `<body>` of the final page.
+  - Declaration:
+    ```php
+    #[Component(
+      selector: 'app-widget',
+      template: 'widget.html.twig',
+      styles: ['widget.css'],
+      // NEW
+      scripts: ['widget.js']
+    )]
+    class WidgetComponent {}
+    ```
+
+- Page skeleton and language
+  - The `Renderer` now generates `<html lang="...">` and `<body>` around the root component output. Configure language via `Renderer::configure(..., string $language = 'en', ...)`.
+  - You can set the document title and additional meta tags from templates using `set_title()` and `add_meta()` helpers, and attach global meta via `Renderer::addGlobalMetaTags([...])`.

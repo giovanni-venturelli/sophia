@@ -47,19 +47,25 @@ and `url()` inside templates.
 
 Quick start
 -----------
-`index.php` wiring:
+`index.php` wiring (DI-based):
 ```php
 use Sophia\Component\ComponentRegistry;
 use Sophia\Component\Renderer;
+use Sophia\Injector\Injector;
 use Sophia\Router\Router;
 
 $registry = ComponentRegistry::getInstance();
-$renderer = new Renderer($registry, __DIR__ . '/pages', cachePath: __DIR__ . '/cache/twig', debug: true);
 
-$router = Router::getInstance();
+/** @var Renderer $renderer */
+$renderer = Injector::inject(Renderer::class);
+$renderer->setRegistry($registry);
+$renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'it', true);
+
+/** @var Router $router */
+$router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
-$router->setBasePath('/test-route'); // optional, if app lives in a subfolder
+$router->setBasePath('/sophia'); // optional, if app lives in a subfolder
 
 require __DIR__ . '/routes.php';
 $router->dispatch();
@@ -82,6 +88,7 @@ $router->configure([
   ],
   [
     'path' => 'about',
+    'name' => 'about',
     'children' => [[
       'path' => 'us',
       'component' => AboutComponent::class,
@@ -229,12 +236,14 @@ You may also pass guard instances (useful when they require constructor args).
 
 Base path
 ---------
-If your app is served under a subfolder (e.g., `/test-route`), set a base path:
+If your app is served under a subfolder (e.g., `/sophia`), set a base path in your bootstrap (not inside `routes.php`):
 ```php
-$router->setBasePath('/test-route');
+$router->setBasePath('/sophia');
 ```
-- Matching will ignore the base path prefix.
-- `url(name, params)` returns app-relative URLs (starting with `/`).
+Guidelines:
+- Set it only once in `index.php` (or `demo/index.php`). Do NOT set it in `routes.php` to avoid double prefixes like `/sophia/sophia/...`.
+- Matching will ignore the base path prefix transparently.
+- `url(name, params)` returns app-relative URLs (starting with `/`) already prefixed with the base path when appropriate.
 
 
 404 handling

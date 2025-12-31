@@ -90,24 +90,32 @@ use Sophia\Router\Router;
 
 require __DIR__ . '/vendor/autoload.php';
 
-// Optional env
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+// Optional env (if your app uses Dotenv in your project)
+// $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+// $dotenv->load();
 
 // Optional DB (root singleton)
 $dbConfig = file_exists('config/database.php')
     ? require 'config/database.php'
     : ['driver' => 'sqlite', 'credentials' => ['database' => 'database/app.db']];
+
 $db = Injector::inject(ConnectionService::class);
 $db->configure($dbConfig);
 
 $registry = ComponentRegistry::getInstance();
-$renderer = new Renderer($registry, __DIR__ . '/pages', cachePath: __DIR__ . '/cache/twig', debug: true);
 
-$router = Router::getInstance();
+/** @var Renderer $renderer */
+$renderer = Injector::inject(Renderer::class);
+$renderer->setRegistry($registry);
+$renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'it', true);
+$renderer->addGlobalStyle('css/style.css');
+$renderer->addGlobalScripts('js/scripts.js');
+
+/** @var Router $router */
+$router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
 $router->setRenderer($renderer);
-$router->setBasePath('/test-route'); // optional, if app is in a subfolder
+$router->setBasePath('/sophia'); // optional, if app lives in a subfolder
 
 require __DIR__ . '/routes.php';
 $router->dispatch();
@@ -242,3 +250,103 @@ Deep dives (module READMEs)
 - Router: [Router](core/router/README.md)
 - Database: [Database](core/database/README.md)
 
+
+
+
+---
+
+Using this repository as a package + demo
+----------------------------------------
+This repo is organized so that the core framework (package) is published to Packagist, while the demo app stays in-repo only.
+
+- Package (library): `giovanni-venturelli/sophia` (root of this repo)
+  - Namespaces exported: `Sophia\\*` (component, injector, router, form, database)
+  - Packagist dist excludes the demo and app assets via `.gitattributes`
+- Demo app: `/demo` (not included in the Packagist dist)
+  - Depends on the package via Composer repository of type `path` to the repo root
+  - Autoloads the demo namespaces from the project folders (`../pages`, `../Shared`, `../services`)
+
+Install the package (as a dependency) in another project
+-------------------------------------------------------
+```bash
+composer require giovanni-venturelli/sophia
+```
+
+Run the demo locally from this repo
+-----------------------------------
+1) Install dependencies for the demo (uses a path repo to the root library):
+```bash
+cd demo
+composer install
+```
+
+2) Start a PHP dev server pointing to the demo folder (or your web server root to `demo/`):
+```bash
+php -S localhost:8080 -t demo
+```
+
+Then open:
+- http://localhost:8080/index.php/home/123 (adjust paths if needed)
+
+Notes
+-----
+- The demo reuses the project folders `pages/`, `Shared/`, `services/`, `config/`, `css/`, `js/`, `cache/` from the repo root.
+- The router base path in the demo is set to `/sophia/demo`. If you serve it at a different path, update `$basePath` in `demo/index.php` and the global asset paths.
+- The package requires PHP >= 8.1; the demo also requires `vlucas/phpdotenv` for `.env` loading.
+
+Publishing to Packagist
+-----------------------
+1) Push this repository to GitHub under `giovanni-venturelli/sophia`.
+2) Create a version tag, e.g.:
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+3) Submit the repository URL to Packagist and set up the GitHub Service Hook so Packagist auto-updates on new tags.
+
+After publish, consumers can `composer require giovanni-venturelli/sophia`.
+
+
+
+What's new (highlights)
+-----------------------
+- Router and Renderer are now injectable root services (`#[Injectable(providedIn: 'root')]`), obtainable via `Injector::inject(...)`.
+- `Renderer::configure()` lets you (re)initialize templates path, cache, language, and debug at runtime.
+- Global assets APIs on the renderer: `addGlobalStyle()`, `addGlobalScripts()`, `addGlobalMetaTags()`.
+- Rich Twig helper set: `component`, `slot`, `url`, `route_data`, `form_action`, `csrf_field`, `flash`/`peek_flash`/`has_flash`, `form_errors`, `old`, `set_title`, `add_meta`.
+- Base path is a single source of truth: set it only once in the bootstrap (`index.php` or `demo/index.php`).
+
+Forms — end-to-end example
+--------------------------
+Route (already present in `routes.php`):
+```php
+[
+  'path' => 'forms/submit/:token',
+  'callback' => [\Sophia\Form\FormController::class, 'handle'],
+  'name' => 'forms.submit'
+],
+```
+Twig template:
+```twig
+<form method="post" action="{{ form_action('send') }}">
+  {{ csrf_field()|raw }}
+  <!-- fields -->
+</form>
+```
+The `form_action('send')` helper generates a URL like `/sophia/forms/submit/<token>` (or `/sophia/demo/...` in the demo). Make sure the base path is set in `index.php` and not in `routes.php`.
+
+Named routes — quick tip
+------------------------
+Always add `name` to routes you want to link to from templates:
+```php
+[
+  'path' => 'about',
+  'component' => App\Pages\About\AboutLayoutComponent::class,
+  'name' => 'about',
+  'children' => include __DIR__ . '/pages/About/routes.php'
+]
+```
+Then in Twig:
+```twig
+<a href="{{ url('about') }}">About</a>
+```
