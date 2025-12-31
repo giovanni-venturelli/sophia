@@ -124,4 +124,8 @@ class HomeComponent
     {
         return count($this->appService->getItems());
     }
+
+    public function dump($var) {
+        var_dump($var);
+    }
 }
