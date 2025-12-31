@@ -2,26 +2,20 @@
 
 namespace Sophia\Database;
 
-use Sophia\Injector\Injectable;
-use Sophia\Injector\Inject;
+use ReflectionClass;
 use Sophia\Injector\Injector;
 use Throwable;
 
-#[Injectable(providedIn: "root")]
-abstract class Entity
+abstract class Entity implements \JsonSerializable
 {
-    /**
-     * ✅ LAZY CONNECTION - Risolve il problema static::$db
-     */
     protected static ?ConnectionService $db = null;
-
-    protected static string $table = '';
+    protected static ?string $table = null;
     protected static string $primaryKey = 'id';
 
     protected array $attributes = [];
     protected array $original = [];
-    protected array $fillable = [];
-    protected array $hidden = [];
+    protected static array $fillable = [];
+    protected static array $hidden = [];
 
     public function __construct(array $attributes = [])
     {
@@ -29,9 +23,6 @@ abstract class Entity
         $this->original = $this->attributes;
     }
 
-    /**
-     * ✅ GETTER LAZY - Inizializza ConnectionService solo quando serve
-     */
     public static function getDb(): ConnectionService
     {
         if (static::$db === null) {
@@ -40,10 +31,17 @@ abstract class Entity
         return static::$db;
     }
 
-    public static function query(): QueryBuilder
+    // ✅ CORRETTO: array|string|array $columns = ['*']
+    public static function query(array|string $columns = ['*']): QueryBuilder
     {
         $table = static::getTableName();
-        return static::getDb()->table($table);
+        $qb = static::getDb()->table($table);
+
+        if ($columns !== ['*']) {
+            $qb->select($columns);
+        }
+
+        return $qb;
     }
 
     public static function getTableName(): string
@@ -53,9 +51,6 @@ abstract class Entity
             : strtolower((new \ReflectionClass(static::class))->getShortName()) . 's';
     }
 
-    /**
-     * Query Scopes (Laravel-style)
-     */
     public static function where(string $column, $operatorOrValue = null, $value = null): QueryBuilder
     {
         $builder = static::query();
@@ -72,27 +67,27 @@ abstract class Entity
         return static::query()->whereIn($column, $values);
     }
 
-    public static function find($id): ?static
+    public static function find($id, array $columns = ['*']): ?static
     {
-        $row = static::query()
+        $row = static::query($columns)
             ->where(static::$primaryKey, $id)
             ->first();
 
         return $row ? new static($row) : null;
     }
 
-    public static function findOrFail($id): static
+    public static function findOrFail($id, array $columns = ['*']): static
     {
-        $model = static::find($id);
+        $model = static::find($id, $columns);
         if (!$model) {
             throw new \RuntimeException(static::class . " with ID {$id} not found");
         }
         return $model;
     }
 
-    public static function all(): array
+    public static function all(array $columns = ['*']): array
     {
-        $rows = static::query()->get();
+        $rows = static::query($columns)->get();
         return static::hydrate($rows);
     }
 
@@ -102,15 +97,11 @@ abstract class Entity
         $id = static::query()->create($fillableData);
 
         $model = new static($fillableData);
-        $model->attributes[static::$primaryKey] = $id;
+        $model->{static::$primaryKey} = $id;
         $model->original = $model->attributes;
-
         return $model;
     }
 
-    /**
-     * Batch operations
-     */
     public static function createMany(array $data): array
     {
         $models = [];
@@ -120,20 +111,14 @@ abstract class Entity
         return $models;
     }
 
-    /**
-     * Instance Methods
-     */
     public function save(): bool
     {
         $pk = static::$primaryKey;
-
         if (!isset($this->attributes[$pk]) || empty($this->attributes[$pk])) {
-            // INSERT
             $fillableData = static::filterFillable($this->attributes);
             $id = static::query()->create($fillableData);
             $this->attributes[$pk] = $id;
         } else {
-            // UPDATE
             $changes = $this->getDirty();
             if (empty($changes)) {
                 return true;
@@ -143,9 +128,9 @@ abstract class Entity
             static::query()
                 ->where($pk, $this->attributes[$pk])
                 ->update($fillableChanges);
-        }
 
-        $this->original = $this->attributes;
+            $this->original = $this->attributes;
+        }
         return true;
     }
 
@@ -172,9 +157,6 @@ abstract class Entity
         return true;
     }
 
-    /**
-     * Mass Assignment Protection
-     */
     protected static function filterFillable(array $data): array
     {
         if (empty(static::$fillable)) {
@@ -202,10 +184,8 @@ abstract class Entity
     {
         $dirty = [];
         foreach ($this->attributes as $key => $value) {
-            if (
-                !array_key_exists($key, $this->original) ||
-                $this->original[$key] !== $value
-            ) {
+            if (!array_key_exists($key, $this->original) ||
+                $this->original[$key] != $value) {
                 $dirty[$key] = $value;
             }
         }
@@ -217,18 +197,12 @@ abstract class Entity
         return !empty($this->getDirty());
     }
 
-    /**
-     * Array/JSON conversion
-     */
     public function toArray(): array
     {
         $array = $this->attributes;
-
-        // Rimuovi hidden fields
         foreach (static::$hidden as $field) {
             unset($array[$field]);
         }
-
         return $array;
     }
 
@@ -237,9 +211,11 @@ abstract class Entity
         return json_encode($this->toArray(), $options);
     }
 
-    /**
-     * Magic Methods
-     */
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
+    }
+
     public function __get(string $name)
     {
         return $this->attributes[$name] ?? null;
@@ -255,27 +231,19 @@ abstract class Entity
         return isset($this->attributes[$name]);
     }
 
-    /**
-     * Hydration Helper
-     */
     public static function hydrate(array $rows): array
     {
         return array_map(fn($row) => new static($row), $rows);
     }
 
-    /**
-     * Refresh from database
-     */
     public function refresh(): static
     {
         $pk = static::$primaryKey;
         $fresh = static::find($this->attributes[$pk]);
-
         if ($fresh) {
             $this->attributes = $fresh->attributes;
             $this->original = $this->attributes;
         }
-
         return $this;
     }
 }
