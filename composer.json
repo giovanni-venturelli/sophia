@@ -17,12 +17,14 @@
             "Sophia\\Router\\": "core/router/",
             "Sophia\\Router\\Models\\": "core/router/models/",
             "Sophia\\Component\\": "core/component/",
+            "Sophia\\Controller\\": "core/controller/",
             "Sophia\\Injector\\": "core/injector/",
             "Sophia\\Form\\": "core/form/",
             "Sophia\\Database\\": "core/database/",
             "Sophia\\Database\\Drivers\\": "core/database/drivers/",
             "App\\Pages\\": "pages",
             "App\\Services\\": "services",
+            "App\\Api\\": "api",
             "Shared\\": "Shared"
 
         }

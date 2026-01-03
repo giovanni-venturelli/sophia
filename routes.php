@@ -1,5 +1,6 @@
 <?php
 
+use App\Api\PostController;
 use App\Pages\About\AboutComponent;
 use App\Pages\About\AboutLayoutComponent;
 use App\Pages\Contact\ThankYouComponent;
@@ -63,5 +64,13 @@ $router->configure([
             echo json_encode(['status' => 'ok', 'message' => 'API Working']);
         },
         'name' => 'api.test',
+    ],
+    [
+        'path' => 'posts',
+        'controller' => PostController::class,  // #[Controller('posts')]
+        'name' => 'posts',
+        'data' => [
+            'resource' => 'posts'
+        ]
     ],
 ]);
