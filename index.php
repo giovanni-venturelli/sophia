@@ -2,6 +2,7 @@
 
 use Sophia\Component\ComponentRegistry;
 use Sophia\Component\Renderer;
+use Sophia\Controller\ControllerRegistry;
 use Sophia\Database\ConnectionService;
 use Sophia\Injector\Injector;
 use Sophia\Router\Router;
@@ -34,6 +35,7 @@ $renderer->addGlobalScripts('/sophia/js/scripts.js');
 /** @var Router $router */
 $router = Injector::inject(Router::class);
 $router->setComponentRegistry($registry);
+$router->setControllerRegistry(new ControllerRegistry());
 $router->setRenderer($renderer);
 $router->setBasePath($basePath);
 

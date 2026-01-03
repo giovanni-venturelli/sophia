@@ -217,72 +217,118 @@ class Router
 
         $this->handleNotFound();
     }
+    private function walkControllerRoutes(
+        array $routes,
+        string $uri,
+        string $method,
+        string $parentPath = '',
+        array $parentGuards = [],
+        array $parentData = []
+    ): bool {
+        foreach ($routes as $route) {
+            $routePath = $this->normalizePath($route['path'] ?? '');
+            $fullPath = trim(
+                ($parentPath !== '' ? $parentPath . '/' : '') . $routePath,
+                '/'
+            );
+
+            $guards = array_merge($parentGuards, $route['canActivate'] ?? []);
+            $data   = array_merge($parentData, $route['data'] ?? []);
+
+            /** 🔥 CONTROLLER MATCH */
+            if (isset($route['controller'])) {
+                if ($fullPath !== '' && !str_starts_with($uri, $fullPath)) {
+                    goto recurse;
+                }
+
+                $relativePath = $fullPath !== ''
+                    ? substr($uri, strlen($fullPath))
+                    : $uri;
+
+                $relativePath = ltrim($relativePath, '/');
+
+                if (!$this->controllerRegistry) {
+                    $this->controllerRegistry = new ControllerRegistry();
+                }
+
+                $match = $this->controllerRegistry->matchControllerMethod(
+                    $route['controller'],
+                    $method,
+                    $relativePath
+                );
+
+                if ($match) {
+                    if (!empty($guards)) {
+                        if (!$this->executeGuards($guards)) {
+                            return true;
+                        }
+                    }
+
+                    $this->currentRoute = $route;
+                    $this->currentParams = $match['params'];
+                    $this->currentRouteData = $data;
+
+                    $result = $this->controllerRegistry->invokeControllerMethod(
+                        $route['controller'],
+                        $match['methodName'],
+                        $match['params']
+                    );
+
+                    $this->handleControllerResponse($result);
+                    return true;
+                }
+            }
+
+            recurse:
+
+            /** 🔁 CHILDREN */
+            if (!empty($route['children'])) {
+                if ($this->walkControllerRoutes(
+                    $route['children'],
+                    $uri,
+                    $method,
+                    $fullPath,
+                    $guards,
+                    $data
+                )) {
+                    return true;
+                }
+            }
+
+            /** 🔁 LAZY IMPORTS */
+            if (!empty($route['imports'])) {
+                foreach ($route['imports'] as $import) {
+                    if (!empty($import['children'])) {
+                        if ($this->walkControllerRoutes(
+                            $import['children'],
+                            $uri,
+                            $method,
+                            $fullPath,
+                            $guards,
+                            $data
+                        )) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
 
     /**
      * 🔥 NUOVO: Prova a dispatchare una route con controller
      */
     private function tryDispatchController(string $uri, string $method): bool
     {
-        foreach ($this->routes as $route) {
-            // Solo route con controller
-            if (!isset($route['controller'])) {
-                continue;
-            }
-
-            $controllerClass = $route['controller'];
-            $routeBasePath = $this->normalizePath($route['path'] ?? '');
-
-            // Verifica che l'URI inizi con il base path della route
-            if ($routeBasePath !== '' && !str_starts_with($uri, $routeBasePath)) {
-                continue;
-            }
-
-            // Calcola il path relativo al controller
-            $relativePath = $routeBasePath !== ''
-                ? substr($uri, strlen($routeBasePath))
-                : $uri;
-            $relativePath = ltrim($relativePath, '/');
-
-            // Ottieni il registry dei controller (lazy init)
-            if (!$this->controllerRegistry) {
-                $this->controllerRegistry = new ControllerRegistry();
-            }
-
-            // Cerca un metodo nel controller che matcha
-            $match = $this->controllerRegistry->matchControllerMethod(
-                $controllerClass,
-                $method,
-                $relativePath
-            );
-
-            if ($match) {
-                // Esegui guards della route se presenti
-                if (!empty($route['canActivate'])) {
-                    if (!$this->executeGuards($route['canActivate'])) {
-                        return true; // Route gestita ma bloccata da guard
-                    }
-                }
-
-                // Salva route corrente
-                $this->currentRoute = $route;
-                $this->currentParams = $match['params'];
-                $this->currentRouteData = $route['data'] ?? [];
-
-                // Invoca il metodo del controller
-                $result = $this->controllerRegistry->invokeControllerMethod(
-                    $controllerClass,
-                    $match['methodName'],
-                    $match['params']
-                );
-
-                // Gestisci il risultato
-                $this->handleControllerResponse($result);
-                return true;
-            }
-        }
-
-        return false;
+        return $this->walkControllerRoutes(
+            $this->routes,
+            $uri,
+            strtoupper($method)
+        );
     }
+
 
     /**
      * 🔥 NUOVO: Gestisce la risposta di un controller
