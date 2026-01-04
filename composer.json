@@ -21,6 +21,7 @@
             "Sophia\\Injector\\": "core/injector/",
             "Sophia\\Form\\": "core/form/",
             "Sophia\\Database\\": "core/database/",
+            "Sophia\\Cache\\": "core/cache/",
             "Sophia\\Database\\Drivers\\": "core/database/drivers/",
             "App\\Pages\\": "pages",
             "App\\Services\\": "services",

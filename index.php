@@ -21,14 +21,14 @@ $dbService = Injector::inject(ConnectionService::class);  // Auto-creato da #[In
 $dbService->configure($dbConfig);
 
 $registry = ComponentRegistry::getInstance();
-$templatesPath = __DIR__ . '/pages';
+$templatesPath = __DIR__ . '/';
 $cachePath     = __DIR__ . '/cache/twig';
 
 // Use DI for Renderer and Router
 /** @var Renderer $renderer */
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
-$renderer->configure($templatesPath, $cachePath, 'it', true);
+$renderer->configure($templatesPath, $cachePath, 'it', $_ENV['DEBUG'] ?? false);
 $renderer->addGlobalStyle('/sophia/css/style.css');
 $renderer->addGlobalScripts('/sophia/js/scripts.js');
 

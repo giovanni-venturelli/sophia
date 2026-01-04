@@ -2,6 +2,7 @@
 
 namespace Sophia\Component;
 
+use Sophia\Cache\FileCache;
 use Sophia\Injector\Injectable;
 use Sophia\Injector\Injector;
 use Sophia\Router\Router;
@@ -38,23 +39,9 @@ class Renderer
     private string $language = 'en';
 
     private array $profilingData = [];
+    private ?FileCache $cache = null;
+    private bool $enableCache = true;
 
-    public function __construct(
-        ?ComponentRegistry $registry = null,
-        string            $templatesPath = '',
-        string            $cachePath = '',
-        string            $language = 'en',
-        bool              $debug = false
-    )
-    {
-        $this->registry = $registry ?? ComponentRegistry::getInstance();
-        $this->language = $language;
-        $this->initTwig($cachePath, $debug);
-        if ($templatesPath !== '') {
-            $this->addTemplatePath($templatesPath);
-        }
-        $this->registerCustomFunctions();
-    }
 
     public function setRegistry(ComponentRegistry $registry): void
     {
@@ -66,7 +53,19 @@ class Renderer
         $this->language = $language;
         $this->templatePaths = [];
         $this->initTwig($cachePath, $debug);
-        $this->addTemplatePath($templatesPath);
+        if ($cachePath) {
+            $componentCachePath = $cachePath . '/components';
+            $this->cache = new FileCache($componentCachePath);
+
+            // Pulisci cache scaduta occasionalmente (1% delle richieste)
+            if (rand(1, 100) === 1) {
+                $this->cache->cleanExpired();
+            }
+        }
+
+        if ($templatesPath !== '') {
+            $this->addTemplatePath($templatesPath);
+        }
         // Re-register functions on new Environment
         $this->registerCustomFunctions();
     }
@@ -74,9 +73,29 @@ class Renderer
     private function initTwig(string $cachePath, bool $debug): void
     {
         $loader = new FilesystemLoader();
+
+        // 🔥 MIGLIORATO: Gestione cache più robusta
+        $cacheConfig = false; // Default: cache disabilitata
+
+        if ($cachePath !== '') {
+            // Assicura che la directory cache esista
+            if (!is_dir($cachePath)) {
+                if (!mkdir($cachePath, 0755, true) && !is_dir($cachePath)) {
+                    throw new RuntimeException("Cannot create cache directory: {$cachePath}");
+                }
+            }
+
+            // Verifica che sia scrivibile
+            if (!is_writable($cachePath)) {
+                throw new RuntimeException("Cache directory is not writable: {$cachePath}");
+            }
+
+            $cacheConfig = realpath($cachePath);
+        }
+
         $this->twig = new Environment($loader, [
-            'cache' => $cachePath,
-            'auto_reload' => $debug,
+            'cache' => $cacheConfig,
+            'auto_reload' => $debug, // In debug mode, ricompila automaticamente se i template cambiano
             'debug' => $debug,
             'strict_variables' => true,
         ]);
@@ -131,6 +150,7 @@ class Renderer
         }
         $this->globalScripts[$scriptId] = $path;
     }
+
     public function addGlobalMetaTags(array $tags): void
     {
         foreach($tags as $tag) {
@@ -139,6 +159,23 @@ class Renderer
             $this->globalMetaTags[$tagId] = $tag;
         }
     }
+
+    /**
+     * 🔥 NUOVO: Svuota la cache di Twig
+     */
+    public function clearCache(): void
+    {
+        $this->twig->clearCacheFiles();
+    }
+
+    /**
+     * 🔥 NUOVO: Svuota la cache di un template specifico
+     */
+    public function clearTemplateCache(string $templateName): void
+    {
+        $this->twig->clearTemplateCache($templateName);
+    }
+
     /**
      * 🔥 NUOVO: Renderizza con layout HTML completo
      */
@@ -234,12 +271,70 @@ class Renderer
 
         return $html;
     }
+    /**
+     * Abilita/disabilita la cache dei componenti
+     */
+    public function setCacheEnabled(bool $enabled): void
+    {
+        $this->enableCache = $enabled;
+    }
 
+    /**
+     * Pulisce tutta la cache dei componenti
+     */
+    public function clearComponentCache(): void
+    {
+        if ($this->cache) {
+            $this->cache->clear();
+        }
+    }
+
+    /**
+     * Pulisce la cache per uno specifico componente
+     */
+    public function clearComponentCacheFor(string $selector): void
+    {
+        $this->cache?->clear();
+    }
+
+    /**
+     * Ottieni statistiche sulla cache
+     */
+    public function getCacheStats(): array
+    {
+        if ($this->cache) {
+            return $this->cache->getStats();
+        }
+        return ['enabled' => false];
+    }
     /**
      * 🔥 AGGIORNATO: supporta slot content
      */
     public function renderComponent(string $selector, array $bindings = [], ?string $slotContent = null): string
     {
+        // 🔥 Prova a recuperare dalla cache
+        if ($this->enableCache && $this->cache) {
+            $cacheKey = 'comp_' . $selector . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
+
+            $cached = $this->cache->get($cacheKey);
+            if ($cached !== null && is_array($cached)) {
+                // 🔥 Ripristina styles e scripts dalla cache
+                if (isset($cached['styles'])) {
+                    foreach ($cached['styles'] as $styleId => $css) {
+                        if (!isset($this->componentStyles[$styleId])) {
+                            $this->componentStyles[$styleId] = $css;
+                        }
+                    }
+                }
+                if (isset($cached['scripts'])) {
+                    foreach ($cached['scripts'] as $scriptId => $js) {
+                        $this->componentScripts[$scriptId] = $js;
+                    }
+                }
+                return $cached['html'];
+            }
+        }
+
         $entry = $this->registry->get($selector);
         if (!$entry) {
             return "<!-- Component {$selector} not found -->";
@@ -250,17 +345,47 @@ class Renderer
 
         $this->applyInputBindings($proxy->instance, $bindings);
 
-        // 🔥 SLOT INJECTION: inietta il contenuto degli slot nel componente
         if ($slotContent !== null) {
             $this->injectSlotContent($proxy->instance, $slotContent);
         }
 
+        // 🔥 Traccia styles e scripts PRIMA del rendering
+        $stylesBefore = array_keys($this->componentStyles);
+        $scriptsBefore = array_keys($this->componentScripts);
+
         $html = $this->renderInstance($proxy);
+
+        // 🔥 Identifica styles e scripts NUOVI aggiunti da questo componente
+        $stylesAfter = array_keys($this->componentStyles);
+        $scriptsAfter = array_keys($this->componentScripts);
+
+        $newStyleKeys = array_diff($stylesAfter, $stylesBefore);
+        $newScriptKeys = array_diff($scriptsAfter, $scriptsBefore);
+
+        $componentStyles = [];
+        foreach ($newStyleKeys as $key) {
+            $componentStyles[$key] = $this->componentStyles[$key];
+        }
+
+        $componentScripts = [];
+        foreach ($newScriptKeys as $key) {
+            $componentScripts[$key] = $this->componentScripts[$key];
+        }
 
         if ($parentScope) {
             Injector::enterScope($parentScope);
         } else {
             Injector::exitScope();
+        }
+
+        // 🔥 Salva in cache HTML + styles + scripts
+        if ($this->enableCache && $this->cache) {
+            $cacheData = [
+                'html' => $html,
+                'styles' => $componentStyles,
+                'scripts' => $componentScripts
+            ];
+            $this->cache->set($cacheKey, $cacheData, 300);
         }
 
         return $html;
