@@ -41,11 +41,21 @@ class Renderer
     private array $profilingData = [];
     private ?FileCache $cache = null;
     private bool $enableCache = true;
-
+    private string $currentUserRole = 'guest';
 
     public function setRegistry(ComponentRegistry $registry): void
     {
         $this->registry = $registry;
+    }
+
+    public function setUserRole(string $role): void
+    {
+        $this->currentUserRole = $role;
+    }
+
+    public function resetUserRole(): void
+    {
+        $this->currentUserRole = 'guest';
     }
 
     public function configure(string $templatesPath, string $cachePath = '', string $language = 'en', bool $debug = false): void
@@ -139,7 +149,7 @@ class Renderer
     {
         $scriptId = 'globalScript-' . uniqid();
 
-        if(str_starts_with($js, 'http')){
+        if (str_starts_with($js, 'http')) {
             $this->globalScripts[$scriptId] = $js;
             return;
         }
@@ -153,7 +163,7 @@ class Renderer
 
     public function addGlobalMetaTags(array $tags): void
     {
-        foreach($tags as $tag) {
+        foreach ($tags as $tag) {
 
             $tagId = 'globalTag-' . uniqid();
             $this->globalMetaTags[$tagId] = $tag;
@@ -240,12 +250,12 @@ class Renderer
             $html .= '    ' . $meta . "\n";
         }
         foreach ($this->globalMetaTags as $tag) {
-            $html .= '   <meta name="' . htmlspecialchars($tag->name) . '" content="' . htmlspecialchars($tag->content) . '"> \n' ;
+            $html .= '   <meta name="' . htmlspecialchars($tag->name) . '" content="' . htmlspecialchars($tag->content) . '"> \n';
         }
 
         // 🔥 Global Styles
         foreach ($this->globalStyles as $styleId => $css) {
-            $html .= '    <link id="' . $styleId . '" rel="stylesheet" href="'.$css.'"></style>' . "\n";
+            $html .= '    <link id="' . $styleId . '" rel="stylesheet" href="' . $css . '"></style>' . "\n";
         }
         foreach ($this->componentStyles as $styleId => $css) {
             $html .= '    <style id="' . $styleId . '">' . $css . '</style>' . "\n";
@@ -259,7 +269,7 @@ class Renderer
 
         // 🔥 Global Scripts
         foreach ($this->globalScripts as $scriptId => $js) {
-            $html .= '    <script id="' . $scriptId . '" type="text/javascript" src="'.$js.'"></script>' . "\n";
+            $html .= '    <script id="' . $scriptId . '" type="text/javascript" src="' . $js . '"></script>' . "\n";
         }
         // 🔥 Global Scripts (alla fine del body)
         foreach ($this->componentScripts as $scriptId => $js) {
@@ -271,6 +281,7 @@ class Renderer
 
         return $html;
     }
+
     /**
      * Abilita/disabilita la cache dei componenti
      */
@@ -307,6 +318,7 @@ class Renderer
         }
         return ['enabled' => false];
     }
+
     /**
      * 🔥 AGGIORNATO: supporta slot content
      */
@@ -314,11 +326,12 @@ class Renderer
     {
         // 🔥 Prova a recuperare dalla cache
         if ($this->enableCache && $this->cache) {
-            $cacheKey = 'comp_' . $selector . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
+            $userRole = $this->currentUserRole;
+            $cacheKey = 'comp_' . $selector . '_' . $userRole . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
 
             $cached = $this->cache->get($cacheKey);
-            if ($cached !== null && is_array($cached)) {
-                // 🔥 Ripristina styles e scripts dalla cache
+            if (is_array($cached)) {
+                // Ripristina styles e scripts dalla cache
                 if (isset($cached['styles'])) {
                     foreach ($cached['styles'] as $styleId => $css) {
                         if (!isset($this->componentStyles[$styleId])) {
@@ -380,6 +393,9 @@ class Renderer
 
         // 🔥 Salva in cache HTML + styles + scripts
         if ($this->enableCache && $this->cache) {
+            $userRole = $this->currentUserRole;
+            $cacheKey = 'comp_' . $selector . '_' . $userRole . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
+
             $cacheData = [
                 'html' => $html,
                 'styles' => $componentStyles,
@@ -457,7 +473,7 @@ class Renderer
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
             $styleId = 'style-' . MD5($proxy->instance::class);
-            if(!isset($this->componentStyles[$styleId])) {
+            if (!isset($this->componentStyles[$styleId])) {
                 $this->componentStyles[$styleId] = $cssContent;
             }
         }
@@ -552,8 +568,12 @@ class Renderer
 
         // ✅ NUOVO: Oggetto component con tutti i metodi pubblici
         $componentContext = new class($instance) {
-            public function __construct(private $instance) {}
-            public function __call(string $name, array $arguments) {
+            public function __construct(private $instance)
+            {
+            }
+
+            public function __call(string $name, array $arguments)
+            {
                 $reflection = new ReflectionObject($this->instance);
                 if ($method = $reflection->getMethod($name)) {
                     return $method->invoke($this->instance, ...$arguments);
@@ -596,7 +616,9 @@ class Renderer
                 $base = Router::getInstance()->getBasePath();
                 if ($base && str_starts_with($path, $base)) {
                     $path = substr($path, strlen($base));
-                    if ($path === '') { $path = '/'; }
+                    if ($path === '') {
+                        $path = '/';
+                    }
                 }
                 $routePath = ltrim($path, '/');
                 $token = FormRegistry::getInstance()->registerHandler($reflection->getName(), $name, $methodName, $routePath);
