@@ -222,6 +222,14 @@ class Renderer
         $html .= '</body>' . "\n";
         $html .= '</html>';
 
+        $html = $this->buildFullHtml($bodyContent);
+        if ($_ENV['DEBUG'] ?? false) {
+            $html .= "\n<!-- PROFILING:\n";
+            foreach ($this->profilingData as $item) {
+                $html .= sprintf("%s: %.4fs\n", $item['template'], $item['time']);
+            }
+            $html .= "-->";
+        }
         return $html;
     }
 
