@@ -37,6 +37,8 @@ class Renderer
     private string $pageTitle = '';
     private string $language = 'en';
 
+    private array $profilingData = [];
+
     public function __construct(
         ?ComponentRegistry $registry = null,
         string            $templatesPath = '',
@@ -169,7 +171,15 @@ class Renderer
         Injector::exitScope();
 
         // 🔥 Costruisci HTML completo
-        return $this->buildFullHtml($bodyContent);
+        $html = $this->buildFullHtml($bodyContent);
+        if ($_ENV['DEBUG'] ?? false) {
+            $html .= "\n<!-- PROFILING:\n";
+            foreach ($this->profilingData as $item) {
+                $html .= sprintf("%s: %.4fs\n", $item['template'], $item['time']);
+            }
+            $html .= "-->";
+        }
+        return $html;
     }
 
     /**
@@ -222,14 +232,6 @@ class Renderer
         $html .= '</body>' . "\n";
         $html .= '</html>';
 
-        $html = $this->buildFullHtml($bodyContent);
-        if ($_ENV['DEBUG'] ?? false) {
-            $html .= "\n<!-- PROFILING:\n";
-            foreach ($this->profilingData as $item) {
-                $html .= sprintf("%s: %.4fs\n", $item['template'], $item['time']);
-            }
-            $html .= "-->";
-        }
         return $html;
     }
 
@@ -319,7 +321,7 @@ class Renderer
     private function renderInstance(ComponentProxy $proxy): string
     {
         Injector::enterScope($proxy);
-
+        $start = microtime(true);
         $config = $proxy->getConfig();
         $templateName = $this->resolveTemplatePath($proxy->instance::class, $config->template);
         $templateData = $this->extractComponentData($proxy);
@@ -342,6 +344,10 @@ class Renderer
             $this->componentScripts[$scriptId] = $jsContent;
         }
 
+        $this->profilingData[] = [
+            'template' => $templateName,
+            'time' => microtime(true) - $start
+        ];
         return $html;
     }
 
