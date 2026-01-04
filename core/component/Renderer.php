@@ -219,6 +219,10 @@ class Renderer
 
         // 🔥 Costruisci HTML completo
         $html = $this->buildFullHtml($bodyContent);
+
+        $csrfService = Injector::inject(CsrfService::class);
+        $html = str_replace('%%SOPHIA_CSRF_TOKEN%%', $csrfService->getToken(), $html);
+
         if ($_ENV['DEBUG'] ?? false) {
             $html .= "\n<!-- PROFILING:\n";
             foreach ($this->profilingData as $item) {
@@ -736,9 +740,7 @@ class Renderer
             new TwigFunction(
                 'csrf_field',
                 function () {
-                    $csrf = Injector::inject(CsrfService::class);
-                    $token = $csrf->getToken();
-                    return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token) . '">';
+                    return '<input type="hidden" name="_csrf" value="%%SOPHIA_CSRF_TOKEN%%">';
                 },
                 ['is_safe' => ['html']]
             )
