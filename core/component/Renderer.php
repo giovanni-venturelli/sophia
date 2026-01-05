@@ -379,6 +379,7 @@ class Renderer
             if (!$jsPath || !file_exists($jsPath)) {
                 throw new RuntimeException("Script '{$scriptFile}' not found for {$componentClass}");
             }
+
             $jsContent .= file_get_contents($jsPath) . "\n";
         }
 
