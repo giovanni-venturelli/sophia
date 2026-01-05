@@ -36,7 +36,7 @@ class FeatureCardComponent
     #[Input]
     public int $index = 0;
 
-    #[Inject] private AppService $appService;
+    #[Inject] public AppService $appService;
 
     public function getServiceCount(): int
     {

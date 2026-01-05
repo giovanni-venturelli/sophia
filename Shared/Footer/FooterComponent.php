@@ -22,7 +22,7 @@ class FooterComponent
     public array $socialLinks = [];
     public array $quickLinks = [];
 
-    #[Inject] private AppService $appService;
+    #[Inject] public AppService $appService;
     public function __construct()
     {
         if ($this->year === 0) {

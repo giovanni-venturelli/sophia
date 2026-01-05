@@ -19,9 +19,9 @@ class ContactComponent
     public string $title = 'Contact Us';
 
     #[Inject]
-    private FlashService $flash;
+    public FlashService $flash;
     #[Inject]
-    private Router $router;
+    public Router $router;
 
     #[FormHandler('send')]
     public function onSend(FormRequest $request): RedirectResult

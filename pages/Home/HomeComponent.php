@@ -30,8 +30,8 @@ use Shared\Header\HeaderComponent;
 class HomeComponent
 {
     #[Input] public string $id = '';
-    #[Inject] private AppService $appService;
-    #[Inject] private ConnectionService $connectionService;
+    #[Inject] public AppService $appService;
+    #[Inject] public ConnectionService $connectionService;
     public string $pageTitle = 'Welcome to Our App';
     public string $subtitle = 'Build amazing things with PHP and Twig';
     public array $features = [];
