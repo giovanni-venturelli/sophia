@@ -43,6 +43,7 @@ class Renderer
     private bool $enableCache = true;
     private string $currentUserRole = 'guest';
     private  array $reflectionCache = [];
+    private static array $componentMetadataCache = [];
 
 
 
@@ -526,7 +527,11 @@ class Renderer
 
     private function loadScripts(string $componentClass, array $scripts): string
     {
-        $reflection = new ReflectionClass($componentClass);
+        if (!isset($this->reflectionCache['class'][$componentClass])) {
+            $reflection = new ReflectionClass($componentClass);
+            $this->reflectionCache['class'][$componentClass] = $reflection;
+        }
+        $reflection = $this->reflectionCache['class'][$componentClass];
         $componentDir = dirname($reflection->getFileName());
         $jsContent = '';
 
@@ -572,28 +577,23 @@ class Renderer
      */
     private function extractComponentData(ComponentProxy $proxy): array
     {
-
-        $data = [];
         $instance = $proxy->instance;
         $className = get_class($instance);
-        if (!isset($this->reflectionCache['object'][$className])) {
-            $reflection = new ReflectionObject($instance);
-            $this->reflectionCache['object'][$className] = $reflection;
-        }
-        $reflection = $this->reflectionCache['object'][$className];
 
-        // Slot helpers (già ok)
-        $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
+        // 🔥 Ottieni metadati cachati
+        $metadata = $this->getComponentMetadata($className, $instance);
+
+        $data = [];
+
+        // Slot helpers (usa metadati cachati)
+        $slotHelpers = $this->generateSlotHelpersOptimized($metadata['slotProperties'], $instance);
         $data = array_merge($data, $slotHelpers);
 
-        // ✅ NUOVO: Oggetto component con tutti i metodi pubblici
+        // Oggetto component con tutti i metodi pubblici
         $componentContext = new class($instance) {
-            public function __construct(private $instance)
-            {
-            }
+            public function __construct(private $instance) {}
 
-            public function __call(string $name, array $arguments)
-            {
+            public function __call(string $name, array $arguments) {
                 $reflection = new ReflectionObject($this->instance);
                 if ($method = $reflection->getMethod($name)) {
                     return $method->invoke($this->instance, ...$arguments);
@@ -603,99 +603,142 @@ class Renderer
         };
         $data['component'] = $componentContext;
 
-        // Proprietà pubbliche
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
+        // 🔥 Proprietà pubbliche (usa cache)
+        foreach ($metadata['properties'] as $propName => $prop) {
             $value = $prop->getValue($instance);
             if ($value instanceof SlotContent) {
-                $data[$prop->getName()] = $value->html;
+                $data[$propName] = $value->html;
             } else {
-                $data[$prop->getName()] = $value;
+                $data[$propName] = $value;
             }
         }
 
-        // Getter methods
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (str_starts_with($method->getName(), 'get') && $method->getNumberOfRequiredParameters() === 0) {
-                $propertyName = lcfirst(substr($method->getName(), 3));
-                $data[$propertyName] = $method->invoke($instance);
-            }
+        // 🔥 Getter methods (usa cache)
+        foreach ($metadata['getters'] as $propertyName => $method) {
+            $data[$propertyName] = $method->invoke($instance);
         }
-        // 🔥 Form handlers: registra i metodi marcati con #[FormHandler('name')]
-        $formTokens = [];
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            $attrs = $method->getAttributes(FormHandler::class);
-            if (!$attrs) continue;
-            foreach ($attrs as $attr) {
-                /** @var FormHandler $meta */
-                $meta = $attr->newInstance();
-                $name = $meta->name;
-                $methodName = $method->getName();
-                // Compute current route path similar to Router::getCurrentPath()
-                $uri = $_SERVER['REQUEST_URI'] ?? '/';
-                $path = parse_url($uri, PHP_URL_PATH) ?: '/';
-                $base = Router::getInstance()->getBasePath();
-                if ($base && str_starts_with($path, $base)) {
-                    $path = substr($path, strlen($base));
-                    if ($path === '') {
-                        $path = '/';
-                    }
-                }
-                $routePath = ltrim($path, '/');
-                $token = FormRegistry::getInstance()->registerHandler($reflection->getName(), $name, $methodName, $routePath);
-                $formTokens[$name] = $token;
+
+        // 🔥 Form handlers (usa cache)
+        if (!empty($metadata['formHandlers'])) {
+            $formTokens = [];
+
+            // Calcola route path una volta sola
+            $routePath = $this->getCurrentRoutePath();
+
+            foreach ($metadata['formHandlers'] as $handlerData) {
+                $meta = $handlerData['meta'];
+                $method = $handlerData['method'];
+
+                $token = FormRegistry::getInstance()->registerHandler(
+                    $className,
+                    $meta->name,
+                    $method->getName(),
+                    $routePath
+                );
+                $formTokens[$meta->name] = $token;
             }
-        }
-        if (!empty($formTokens)) {
+
             $data['__form_tokens'] = $formTokens;
-            $data['__component_class'] = $reflection->getName();
+            $data['__component_class'] = $className;
         }
 
         return $data;
     }
-
-    /**
-     * 🔥 NUOVO: Genera callables per tutti i metodi pubblici del componente
-     */
-    private function generateMethodCallables(ReflectionObject $reflection, object $instance): array
+    private function getCurrentRoutePath(): string
     {
-        $callables = [];
+        static $cachedRoutePath = null;
 
+        if ($cachedRoutePath !== null) {
+            return $cachedRoutePath;
+        }
+
+        $uri = $_SERVER['REQUEST_URI'] ?? '/';
+        $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+        $base = Router::getInstance()->getBasePath();
+
+        if ($base && str_starts_with($path, $base)) {
+            $path = substr($path, strlen($base));
+            if ($path === '') {
+                $path = '/';
+            }
+        }
+
+        $cachedRoutePath = ltrim($path, '/');
+        return $cachedRoutePath;
+    }
+
+    private function getComponentMetadata(string $className, object $instance): array
+    {
+        // Cache statica per classe (condivisa tra tutte le istanze)
+        if (isset(self::$componentMetadataCache[$className])) {
+            return self::$componentMetadataCache[$className];
+        }
+
+        $reflection = new ReflectionObject($instance);
+
+        $metadata = [
+            'properties' => [],
+            'getters' => [],
+            'formHandlers' => [],
+            'slotProperties' => []
+        ];
+
+        // 🔥 Pre-calcola proprietà pubbliche
+        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
+            $metadata['properties'][$prop->getName()] = $prop;
+        }
+
+        // 🔥 Pre-calcola getters e form handlers
         foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             $methodName = $method->getName();
 
-            // Salta costruttore, magic methods e lifecycle hooks
-            if ($methodName === '__construct'
-                || str_starts_with($methodName, '__')
-                || $methodName === 'onInit'
-                || $methodName === 'onDestroy') {
-                continue;
+            // Getters
+            if (str_starts_with($methodName, 'get') && $method->getNumberOfRequiredParameters() === 0) {
+                $propertyName = lcfirst(substr($methodName, 3));
+                $metadata['getters'][$propertyName] = $method;
             }
 
-            // Crea una closure che chiama il metodo
-            $callables[$methodName] = function (...$args) use ($instance, $method) {
-                return $method->invoke($instance, ...$args);
-            };
+            // Form handlers
+            $attrs = $method->getAttributes(FormHandler::class);
+            if (!empty($attrs)) {
+                foreach ($attrs as $attr) {
+                    $metadata['formHandlers'][] = [
+                        'method' => $method,
+                        'meta' => $attr->newInstance()
+                    ];
+                }
+            }
         }
 
-        return $callables;
+        // 🔥 Pre-calcola slot properties
+        foreach ($reflection->getProperties() as $prop) {
+            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
+            if ($slotAttr) {
+                $metadata['slotProperties'][] = [
+                    'prop' => $prop,
+                    'name' => $prop->getName()
+                ];
+            }
+        }
+
+        // Salva in cache statica
+        self::$componentMetadataCache[$className] = $metadata;
+
+        return $metadata;
     }
 
-    /**
-     * 🔥 NUOVO: Genera automaticamente gli helper per gli slot
-     */
-    private function generateSlotHelpers(ReflectionObject $reflection, object $instance): array
+    private function generateSlotHelpersOptimized(array $cachedSlotProperties, object $instance): array
     {
         $helpers = [];
         $slotObjects = [];
 
-        foreach ($reflection->getProperties() as $prop) {
-            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
-            if (!$slotAttr) continue;
+        foreach ($cachedSlotProperties as $slotData) {
+            $prop = $slotData['prop'];
+            $propName = $slotData['name'];
 
             $prop->setAccessible(true);
             $slotContent = $prop->getValue($instance);
 
-            $propName = $prop->getName();
             $baseName = str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName;
 
             $helpers['has' . ucfirst($baseName)] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
