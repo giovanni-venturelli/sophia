@@ -42,6 +42,9 @@ class Renderer
     private ?FileCache $cache = null;
     private bool $enableCache = true;
     private string $currentUserRole = 'guest';
+    private  array $reflectionCache = [];
+
+
 
     public function setRegistry(ComponentRegistry $registry): void
     {
@@ -113,7 +116,11 @@ class Renderer
 
     private function resolveTemplatePath(string $componentClass, string $template): string
     {
-        $reflection = new ReflectionClass($componentClass);
+        if (!isset($this->reflectionCache['class'][$componentClass])) {
+            $reflection = new ReflectionClass($componentClass);
+            $this->reflectionCache['class'][$componentClass] = $reflection;
+        }
+        $reflection = $this->reflectionCache['class'][$componentClass];
         $componentDir = dirname($reflection->getFileName());
 
         $fullPath = realpath($componentDir . '/' . $template);
@@ -329,28 +336,28 @@ class Renderer
     public function renderComponent(string $selector, array $bindings = [], ?string $slotContent = null): string
     {
         // 🔥 Prova a recuperare dalla cache
-        if ($this->enableCache && $this->cache) {
-            $userRole = $this->currentUserRole;
-            $cacheKey = 'comp_' . $selector . '_' . $userRole . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
-
-            $cached = $this->cache->get($cacheKey);
-            if (is_array($cached)) {
-                // Ripristina styles e scripts dalla cache
-                if (isset($cached['styles'])) {
-                    foreach ($cached['styles'] as $styleId => $css) {
-                        if (!isset($this->componentStyles[$styleId])) {
-                            $this->componentStyles[$styleId] = $css;
-                        }
-                    }
-                }
-                if (isset($cached['scripts'])) {
-                    foreach ($cached['scripts'] as $scriptId => $js) {
-                        $this->componentScripts[$scriptId] = $js;
-                    }
-                }
-                return $cached['html'];
-            }
-        }
+//        if ($this->enableCache && $this->cache) {
+//            $userRole = $this->currentUserRole;
+//            $cacheKey = 'comp_' . $selector . '_' . $userRole . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
+//
+//            $cached = $this->cache->get($cacheKey);
+//            if (is_array($cached)) {
+//                // Ripristina styles e scripts dalla cache
+//                if (isset($cached['styles'])) {
+//                    foreach ($cached['styles'] as $styleId => $css) {
+//                        if (!isset($this->componentStyles[$styleId])) {
+//                            $this->componentStyles[$styleId] = $css;
+//                        }
+//                    }
+//                }
+//                if (isset($cached['scripts'])) {
+//                    foreach ($cached['scripts'] as $scriptId => $js) {
+//                        $this->componentScripts[$scriptId] = $js;
+//                    }
+//                }
+//                return $cached['html'];
+//            }
+//        }
 
         $entry = $this->registry->get($selector);
         if (!$entry) {
@@ -396,17 +403,17 @@ class Renderer
         }
 
         // 🔥 Salva in cache HTML + styles + scripts
-        if ($this->enableCache && $this->cache) {
-            $userRole = $this->currentUserRole;
-            $cacheKey = 'comp_' . $selector . '_' . $userRole . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
-
-            $cacheData = [
-                'html' => $html,
-                'styles' => $componentStyles,
-                'scripts' => $componentScripts
-            ];
-            $this->cache->set($cacheKey, $cacheData, 300);
-        }
+//        if ($this->enableCache && $this->cache) {
+//            $userRole = $this->currentUserRole;
+//            $cacheKey = 'comp_' . $selector . '_' . $userRole . '_' . md5(json_encode($bindings) . ($slotContent ?? ''));
+//
+//            $cacheData = [
+//                'html' => $html,
+//                'styles' => $componentStyles,
+//                'scripts' => $componentScripts
+//            ];
+//            $this->cache->set($cacheKey, $cacheData, 300);
+//        }
 
         return $html;
     }
@@ -498,7 +505,11 @@ class Renderer
 
     private function loadStyles(string $componentClass, array $styles): string
     {
-        $reflection = new ReflectionClass($componentClass);
+        if (!isset($this->reflectionCache['class'][$componentClass])) {
+            $reflection = new ReflectionClass($componentClass);
+            $this->reflectionCache['class'][$componentClass] = $reflection;
+        }
+        $reflection = $this->reflectionCache['class'][$componentClass];
         $componentDir = dirname($reflection->getFileName());
         $cssContent = '';
 
@@ -564,7 +575,12 @@ class Renderer
 
         $data = [];
         $instance = $proxy->instance;
-        $reflection = new ReflectionObject($instance);
+        $className = get_class($instance);
+        if (!isset($this->reflectionCache['object'][$className])) {
+            $reflection = new ReflectionObject($instance);
+            $this->reflectionCache['object'][$className] = $reflection;
+        }
+        $reflection = $this->reflectionCache['object'][$className];
 
         // Slot helpers (già ok)
         $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
