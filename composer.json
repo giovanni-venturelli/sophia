@@ -15,6 +15,7 @@
     "autoload": {
         "psr-4": {
             "Sophia\\Router\\": "core/router/",
+            "Sophia\\Debug\\": "debug/",
             "Sophia\\Router\\Models\\": "core/router/models/",
             "Sophia\\Component\\": "core/component/",
             "Sophia\\Controller\\": "core/controller/",
