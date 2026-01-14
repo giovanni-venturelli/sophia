@@ -43,7 +43,7 @@ $cachePath = realpath(__DIR__ . '/cache/twig') ?: __DIR__ . '/cache/twig';
 /** @var Renderer $renderer */
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
-
+$registry->boot(__DIR__ . '/Shared');
 // ⚡ PERFORMANCE: Disable cache in debug, enable in production
 $isDebug = $_ENV['DEBUG'] ?? false;
 $renderer->configure($templatesPath, $isDebug ? '' : $cachePath, 'it', $isDebug);

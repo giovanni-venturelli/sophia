@@ -22,6 +22,7 @@ use Twig\TwigFunction;
 #[Injectable(providedIn: 'root')]
 class Renderer
 {
+    private static mixed $templateDataCache;
     private Environment $twig;
     private ComponentRegistry $registry;
     private array $templatePaths = [];
@@ -39,6 +40,10 @@ class Renderer
     private static array $reflectionCache = [];
     private static array $inputBindingsCache = [];
     private static array $slotPropertiesCache = [];
+    private static array $publicPropertiesCache = [];
+
+    private static array $formTokensCache = [];
+    private static array $slotMetaCache = [];
 
     public function __construct(
         ?ComponentRegistry $registry = null,
@@ -271,12 +276,9 @@ class Renderer
 
     private function injectSlotContent(object $component, string $slotContent): void
     {
-        Profiler::start('injectSlotContent');
-
         $slots = $this->parseSlotContent($slotContent);
         $className = get_class($component);
 
-        // ⚡ CACHE: Proprietà slot una volta sola per classe
         if (!isset(self::$slotPropertiesCache[$className])) {
             $ref = new ReflectionObject($component);
             $slotProps = [];
@@ -291,21 +293,14 @@ class Renderer
                     ];
                 }
             }
-
             self::$slotPropertiesCache[$className] = $slotProps;
         }
 
-        $slotProps = self::$slotPropertiesCache[$className];
-
-        // ⚡ Applica slot velocemente
-        foreach ($slotProps as $slotInfo) {
-            $content = $slots[$slotInfo['slotName']] ?? null;
-            if ($content) {
-                $component->{$slotInfo['name']} = $content;
+        foreach (self::$slotPropertiesCache[$className] as $slotInfo) {
+            if (isset($slots[$slotInfo['slotName']])) {
+                $component->{$slotInfo['name']} = $slots[$slotInfo['slotName']];
             }
         }
-
-        Profiler::end('injectSlotContent');
     }
 
     private function parseSlotContent(string $content): array
@@ -334,42 +329,27 @@ class Renderer
         return $slots;
     }
 
-    private function renderInstance(ComponentProxy $proxy): string
+    public function renderInstance(ComponentProxy $proxy): string
     {
         Profiler::start('renderInstance');
-
-        Injector::enterScope($proxy);
         $start = microtime(true);
         $config = $proxy->getConfig();
 
-        Profiler::start('resolveTemplate');
         $templateName = $this->resolveTemplatePath($proxy->instance::class, $config->template);
-        Profiler::end('resolveTemplate');
-
-        Profiler::start('extractComponentData');
         $templateData = $this->extractComponentData($proxy);
-        Profiler::end('extractComponentData');
 
-        Profiler::start('twig->render');
         $html = $this->twig->render($templateName, $templateData);
-        Profiler::end('twig->render');
 
         if (!empty($config->styles)) {
-            Profiler::start('loadStyles');
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
             $styleId = 'style-' . MD5($proxy->instance::class);
-            if(!isset($this->componentStyles[$styleId])) {
-                $this->componentStyles[$styleId] = $cssContent;
-            }
-            Profiler::end('loadStyles');
+            $this->componentStyles[$styleId] = $cssContent;
         }
 
         if (!empty($config->scripts)) {
-            Profiler::start('loadScripts');
             $jsContent = $this->loadScripts($proxy->instance::class, $config->scripts);
-            $scriptId = 'script-' . uniqid();
+            $scriptId = 'script-' . MD5($proxy->instance::class . implode('', $config->scripts));
             $this->componentScripts[$scriptId] = $jsContent;
-            Profiler::end('loadScripts');
         }
 
         $this->profilingData[] = [
@@ -378,7 +358,6 @@ class Renderer
         ];
 
         Profiler::end('renderInstance');
-
         return $html;
     }
     private static array $stylesContentCache = [];
@@ -488,115 +467,128 @@ class Renderer
 
     private function extractComponentData(ComponentProxy $proxy): array
     {
-        Profiler::start('extractComponentData::slots');
-        $data = [];
         $instance = $proxy->instance;
-        $reflection = new ReflectionObject($instance);
+        $className = get_class($instance);
+        $data = [];
 
-        $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
+        // 1. Slot Helpers
+        Profiler::start('extractComponentData::slots');
+        $slotHelpers = $this->generateSlotHelpers(new ReflectionObject($instance), $instance);
         $data = array_merge($data, $slotHelpers);
         Profiler::end('extractComponentData::slots');
 
-        Profiler::start('extractComponentData::component');
-        $componentContext = new class($instance) {
-            public function __construct(private $instance) {}
-            public function __call(string $name, array $arguments) {
-                $reflection = new ReflectionObject($this->instance);
-                if ($method = $reflection->getMethod($name)) {
-                    return $method->invoke($this->instance, ...$arguments);
-                }
-                throw new \BadMethodCallException("Method $name not found");
-            }
-        };
-        $data['component'] = $componentContext;
-        Profiler::end('extractComponentData::component');
+        // 2. Component Instance (for method calls in twig)
+        $data['component'] = $instance;
 
+        // 3. Properties Cache
         Profiler::start('extractComponentData::properties');
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
-            $value = $prop->getValue($instance);
-            if ($value instanceof SlotContent) {
-                $data[$prop->getName()] = $value->html;
-            } else {
-                $data[$prop->getName()] = $value;
+        if (!isset(self::$publicPropertiesCache[$className])) {
+            $reflection = new ReflectionObject($instance);
+            $props = [];
+            foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
+                $props[] = $prop->getName();
             }
+            self::$publicPropertiesCache[$className] = $props;
+        }
+
+        foreach (self::$publicPropertiesCache[$className] as $propName) {
+            $value = $instance->$propName;
+            $data[$propName] = ($value instanceof SlotContent) ? $value->html : $value;
         }
         Profiler::end('extractComponentData::properties');
 
+        // 4. Getters Cache
         Profiler::start('extractComponentData::getters');
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (str_starts_with($method->getName(), 'get') && $method->getNumberOfRequiredParameters() === 0) {
-                $propertyName = lcfirst(substr($method->getName(), 3));
-                $data[$propertyName] = $method->invoke($instance);
+        if (!isset(self::$templateDataCache[$className]['getters'])) {
+            $reflection = new ReflectionObject($instance);
+            $getters = [];
+            foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+                if (str_starts_with($method->getName(), 'get') && $method->getNumberOfRequiredParameters() === 0) {
+                    $propertyName = lcfirst(substr($method->getName(), 3));
+                    $getters[$propertyName] = $method->getName();
+                }
             }
+            self::$templateDataCache[$className]['getters'] = $getters;
+        }
+
+        foreach (self::$templateDataCache[$className]['getters'] as $propName => $methodName) {
+            $data[$propName] = $instance->$methodName();
         }
         Profiler::end('extractComponentData::getters');
 
+        // 5. Form Tokens Cache
         Profiler::start('extractComponentData::forms');
-        $formTokens = [];
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            $attrs = $method->getAttributes(FormHandler::class);
-            if (!$attrs) continue;
-            foreach ($attrs as $attr) {
-                $meta = $attr->newInstance();
-                $name = $meta->name;
-                $methodName = $method->getName();
-                $uri = $_SERVER['REQUEST_URI'] ?? '/';
-                $path = parse_url($uri, PHP_URL_PATH) ?: '/';
-                $base = Router::getInstance()->getBasePath();
-                if ($base && str_starts_with($path, $base)) {
-                    $path = substr($path, strlen($base));
-                    if ($path === '') { $path = '/'; }
+        if (!isset(self::$formTokensCache[$className])) {
+            $reflection = new ReflectionObject($instance);
+            $handlers = [];
+            foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+                $attrs = $method->getAttributes(FormHandler::class);
+                if ($attrs) {
+                    foreach ($attrs as $attr) {
+                        $meta = $attr->newInstance();
+                        $handlers[$meta->name] = $method->getName();
+                    }
                 }
-                $routePath = ltrim($path, '/');
-                $token = FormRegistry::getInstance()->registerHandler($reflection->getName(), $name, $methodName, $routePath);
-                $formTokens[$name] = $token;
             }
+            self::$formTokensCache[$className] = $handlers;
         }
-        if (!empty($formTokens)) {
+
+        if (!empty(self::$formTokensCache[$className])) {
+            $formTokens = [];
+            $uri = $_SERVER['REQUEST_URI'] ?? '/';
+            $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+            $base = Router::getInstance()->getBasePath();
+            if ($base && str_starts_with($path, $base)) {
+                $path = substr($path, strlen($base)) ?: '/';
+            }
+            $routePath = ltrim($path, '/');
+
+            foreach (self::$formTokensCache[$className] as $formName => $methodName) {
+                $formTokens[$formName] = FormRegistry::getInstance()->registerHandler($className, $formName, $methodName, $routePath);
+            }
             $data['__form_tokens'] = $formTokens;
-            $data['__component_class'] = $reflection->getName();
+            $data['__component_class'] = $className;
         }
         Profiler::end('extractComponentData::forms');
 
         return $data;
     }
 
+
     private function generateSlotHelpers(ReflectionObject $reflection, object $instance): array
     {
+        $className = get_class($instance);
         $helpers = [];
         $slotObjects = [];
 
-        foreach ($reflection->getProperties() as $prop) {
-            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
-            if (!$slotAttr) continue;
+        if (!isset(self::$slotMetaCache[$className])) {
+            $meta = [];
+            foreach ($reflection->getProperties() as $prop) {
+                $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
+                if ($slotAttr) {
+                    $slotConfig = $slotAttr->newInstance();
+                    $propName = $prop->getName();
+                    $meta[] = [
+                        'prop' => $propName,
+                        'base' => str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName,
+                        'slotName' => $slotConfig->name
+                    ];
+                }
+            }
+            self::$slotMetaCache[$className] = $meta;
+        }
 
-            $prop->setAccessible(true);
-            $slotContent = $prop->getValue($instance);
-
-            $propName = $prop->getName();
-            $baseName = str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName;
-
-            $helpers['has' . ucfirst($baseName)] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
-
+        foreach (self::$slotMetaCache[$className] as $m) {
+            $slotContent = $instance->{$m['prop']} ?? null;
+            $helpers['has' . ucfirst($m['base'])] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
             if ($slotContent instanceof SlotContent) {
-                $slotObjects[$baseName] = $slotContent;
+                $slotObjects[$m['base']] = $slotContent;
             }
         }
 
         $helpers['slot'] = function (string $name, array $context = []) use ($slotObjects) {
-            Profiler::start("slot::render::{$name}");
-            Profiler::count('slot renders');
-
             $slotContent = $slotObjects[$name] ?? null;
-            if (!$slotContent || $slotContent->isEmpty()) {
-                Profiler::end("slot::render::{$name}");
-                return '';
-            }
-
-            $result = $slotContent->render($context);
-            Profiler::end("slot::render::{$name}");
-
-            return $result;
+            return ($slotContent && !$slotContent->isEmpty()) ? $slotContent->render($context) : '';
         };
 
         return $helpers;
@@ -629,8 +621,19 @@ class Renderer
         $this->twig->addFunction(new TwigFunction('form_action', function (array $context, string $name) {
             $class = $context['__component_class'] ?? null;
             if (!$class) return '#';
-            $token = FormRegistry::getInstance()->getTokenFor($class, $name);
-            if (!$token) return '#';
+            
+            $uri = $_SERVER['REQUEST_URI'] ?? '/';
+            $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+            $base = Router::getInstance()->getBasePath();
+            if ($base && str_starts_with($path, $base)) {
+                $path = substr($path, strlen($base)) ?: '/';
+            }
+            $routePath = ltrim($path, '/');
+
+            $methodName = self::$formTokensCache[$class][$name] ?? null;
+            if (!$methodName) return '#';
+
+            $token = FormRegistry::getInstance()->registerHandler($class, $name, $methodName, $routePath);
             $router = Router::getInstance();
             return $router->url('forms.submit', ['token' => $token]);
         }, ['needs_context' => true]));

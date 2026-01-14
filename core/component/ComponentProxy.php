@@ -16,6 +16,8 @@ class ComponentProxy
     public object $instance;
     public ?ComponentProxy $parentScope = null;
 
+    private static array $injectionCache = [];
+
     /**
      * @throws ReflectionException
      */
@@ -25,14 +27,9 @@ class ComponentProxy
         $this->config = $config;
         $this->parentScope = $parent;
 
-        $componentName = basename(str_replace('\\', '/', $className));
-        $parentId = $parent ? $parent->getId() : 'null';
-
-
         Injector::enterScope($this);
 
         foreach ($config->providers as $providerClass) {
-            $serviceName = basename(str_replace('\\', '/', $providerClass));
             Injector::inject($providerClass, $this);
         }
 
@@ -54,33 +51,36 @@ class ComponentProxy
      */
     private function createAndInject(string $className): object
     {
-        $reflection = new ReflectionClass($className);
-        $instance = $reflection->newInstance();
-
-        $componentName = basename(str_replace('\\', '/', $className));
-
-        foreach ($reflection->getProperties() as $prop) {
-            $injectAttr = $prop->getAttributes(Inject::class)[0] ?? null;
-            if (!$injectAttr) continue;
-
-            $type = $prop->getType()?->getName();
-
-            if (!$type || !class_exists($type)) {
-                continue;
+        if (!isset(self::$injectionCache[$className])) {
+            $reflection = new ReflectionClass($className);
+            $propsToInject = [];
+            foreach ($reflection->getProperties() as $prop) {
+                $injectAttr = $prop->getAttributes(Inject::class)[0] ?? null;
+                if ($injectAttr) {
+                    $type = $prop->getType()?->getName();
+                    if ($type && class_exists($type)) {
+                        $prop->setAccessible(true);
+                        $propsToInject[] = ['prop' => $prop, 'type' => $type];
+                    }
+                }
             }
-
-            $prop->setAccessible(true);
-            $service = Injector::inject($type, $this);
-            $prop->setValue($instance, $service);
-
+            self::$injectionCache[$className] = [
+                'reflection' => $reflection,
+                'inject' => $propsToInject,
+                'hasOnInit' => method_exists($className, 'onInit')
+            ];
         }
 
-        if (method_exists($instance, 'onInit')) {
-            $instance->onInit();
+        $cache = self::$injectionCache[$className];
+        $instance = $cache['reflection']->newInstance();
 
-            if (method_exists($instance, 'getServiceCount')) {
-                $count = $instance->getServiceCount();
-            }
+        foreach ($cache['inject'] as $injection) {
+            $service = Injector::inject($injection['type'], $this);
+            $injection['prop']->setValue($instance, $service);
+        }
+
+        if ($cache['hasOnInit']) {
+            $instance->onInit();
         }
 
         return $instance;

@@ -1,0 +1,20 @@
+<div class="feature-card {{ borderClass }} {{ isFirst ? 'first' : '' }} {{ isLast ? 'last' : '' }}"
+     data-index="{{ index }}">
+    <div class="icon" style="color: {{ iconColor }}">
+        {{ icon }}
+    </div>
+    <h3>{{ title }}</h3>
+    <p>{{ description }}</p>
+    {% if isFirst %}
+        <div class="badge">✨ Most Popular</div>
+    {% endif %}
+
+    <div>We have exactly {{ serviceCount }} items</div>
+    {% if isLast %}
+        <div class="badge">🆕 New!</div>
+    {% endif %}
+    {{ component('app-footer', {
+        year: 3000,
+        companyName: 'My Awesome Company'
+    }) }}
+</div>

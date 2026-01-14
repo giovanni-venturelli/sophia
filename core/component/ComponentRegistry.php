@@ -4,6 +4,8 @@
  */
 namespace Sophia\Component;
 
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionClass;
 use ReflectionException;
 use Sophia\Debug\Profiler;
@@ -13,6 +15,52 @@ class ComponentRegistry {
     private static ?self $instance = null;
     private array $components = [];
     private static array $reflectionCache = [];  // ← PERFORMANCE CACHE!
+    public static function boot(string $componentsDir): void
+    {
+        Profiler::start('registry.boot');
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($componentsDir, RecursiveDirectoryIterator::SKIP_DOTS)
+        );
+        $classes = [];
+        foreach ($files as $file) {
+            if ($file->getExtension() === 'php') {
+                $namespace = 'App\\Components'; // adatta al tuo namespace
+                $className = $namespace . '\\' . str_replace(
+                        [$componentsDir . DIRECTORY_SEPARATOR, '.php'],
+                        ['', ''],
+                        $file->getPathname()
+                    );
+                $className = str_replace(DIRECTORY_SEPARATOR, '\\', $className);
+                if (class_exists($className)) {
+                    $classes[] = $className;
+                }
+            }
+        }
+
+        $instance = self::getInstance();
+        foreach (array_unique($classes) as $class) {
+            try {
+                $instance->registerRecursive($class, []);
+            } catch (Throwable $e) {
+                // Logga ma continua
+                error_log("Failed to register $class: " . $e->getMessage());
+            }
+        }
+        Profiler::end('registry.boot');
+        Profiler::count('registry.boot.classes', count($classes));
+    }
+
+    /**
+     * Versione veloce: registra solo classi esplicite
+     */
+    public static function preload(array $classList): void
+    {
+        $instance = self::getInstance();
+        foreach ($classList as $class) {
+            $instance->lazyRegister($class);
+        }
+    }
+
 
     public static function getInstance(): self {
         if (!self::$instance) {
