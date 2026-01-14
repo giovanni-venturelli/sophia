@@ -4,14 +4,63 @@
  */
 namespace Sophia\Component;
 
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use ReflectionClass;
 use ReflectionException;
+use Sophia\Debug\Profiler;
 use Throwable;
 
 class ComponentRegistry {
     private static ?self $instance = null;
     private array $components = [];
     private static array $reflectionCache = [];  // ← PERFORMANCE CACHE!
+    public static function boot(string $componentsDir): void
+    {
+        Profiler::start('registry.boot');
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($componentsDir, RecursiveDirectoryIterator::SKIP_DOTS)
+        );
+        $classes = [];
+        foreach ($files as $file) {
+            if ($file->getExtension() === 'php') {
+                $namespace = 'App\\Components'; // adatta al tuo namespace
+                $className = $namespace . '\\' . str_replace(
+                        [$componentsDir . DIRECTORY_SEPARATOR, '.php'],
+                        ['', ''],
+                        $file->getPathname()
+                    );
+                $className = str_replace(DIRECTORY_SEPARATOR, '\\', $className);
+                if (class_exists($className)) {
+                    $classes[] = $className;
+                }
+            }
+        }
+
+        $instance = self::getInstance();
+        foreach (array_unique($classes) as $class) {
+            try {
+                $instance->registerRecursive($class, []);
+            } catch (Throwable $e) {
+                // Logga ma continua
+                error_log("Failed to register $class: " . $e->getMessage());
+            }
+        }
+        Profiler::end('registry.boot');
+        Profiler::count('registry.boot.classes', count($classes));
+    }
+
+    /**
+     * Versione veloce: registra solo classi esplicite
+     */
+    public static function preload(array $classList): void
+    {
+        $instance = self::getInstance();
+        foreach ($classList as $class) {
+            $instance->lazyRegister($class);
+        }
+    }
+
 
     public static function getInstance(): self {
         if (!self::$instance) {
@@ -45,11 +94,21 @@ class ComponentRegistry {
      * Lazy Registration - NO options!
      */
     public function lazyRegister(string $class): string {
+        Profiler::start('ComponentRegistry::lazyRegister');
+        Profiler::count('lazyRegister calls');
+
         $selector = $this->getSelectorFromClass($class);
         if ($this->has($selector)) {
+            Profiler::count('lazyRegister cache hits');
+            Profiler::end('ComponentRegistry::lazyRegister');
             return $selector;
         }
+
+        Profiler::start('lazyRegister::registerRecursive');
         $this->registerRecursive($class, []);
+        Profiler::end('lazyRegister::registerRecursive');
+
+        Profiler::end('ComponentRegistry::lazyRegister');
         return $selector;
     }
 
@@ -57,17 +116,26 @@ class ComponentRegistry {
      * Private recursive registration
      * @throws ReflectionException
      */
+
     private function registerRecursive(string $class, array $options): void {
+        Profiler::count('registerRecursive calls');
+
         $selector = $this->getSelectorFromClass($class);
         if ($this->has($selector)) {
-            return;
+            return; // ⚡ Already registered
         }
+
+        Profiler::start('registerRecursive::registerClass');
         $this->registerClass($class, $options);
+        Profiler::end('registerRecursive::registerClass');
 
         // Auto-registra imports RICORSIVAMENTE
+        Profiler::start('registerRecursive::getImports');
         $imports = $this->getImportsFromComponentAttribute($class);
+        Profiler::end('registerRecursive::getImports');
+
         foreach ($imports as $importClass) {
-            $this->registerRecursive($importClass, $options);
+            $this->registerRecursive($importClass, $options); // ⚡ Potenzialmente lento!
         }
     }
 
@@ -76,13 +144,17 @@ class ComponentRegistry {
      * @throws ReflectionException
      */
     private function registerClass(string $class, array $options): void {
-        // ← PERFORMANCE CACHE (80% più veloce!)
+        Profiler::count('registerClass calls');
+
+        // Cache check
         $cacheKey = $class;
         if (isset(static::$reflectionCache[$cacheKey])) {
             $ref = static::$reflectionCache[$cacheKey];
         } else {
+            Profiler::start('registerClass::reflection');
             $ref = new ReflectionClass($class);
             static::$reflectionCache[$cacheKey] = $ref;
+            Profiler::end('registerClass::reflection');
         }
 
         $attr = $ref->getAttributes(Component::class)[0] ?? null;
@@ -90,7 +162,10 @@ class ComponentRegistry {
             throw new ReflectionException("Class {$class} must have #[Component] attribute");
         }
 
+        Profiler::start('registerClass::newInstance');
         $config = $attr->newInstance();
+        Profiler::end('registerClass::newInstance');
+
         $this->components[$config->selector] = [
             'class' => $class,
             'config' => $config,
@@ -103,12 +178,16 @@ class ComponentRegistry {
      * Get selector from class (with cache)
      */
     private function getSelectorFromClass(string $class): string {
+        Profiler::count('getSelectorFromClass calls');
+
         try {
             $cacheKey = "selector:{$class}";
             if (isset(static::$reflectionCache[$cacheKey])) {
+                Profiler::count('getSelectorFromClass cache hits');
                 return static::$reflectionCache[$cacheKey];
             }
 
+            Profiler::start('getSelectorFromClass::reflection');
             $ref = new ReflectionClass($class);
             $attr = $ref->getAttributes(Component::class)[0] ?? null;
 
@@ -116,11 +195,13 @@ class ComponentRegistry {
                 $config = $attr->newInstance();
                 $selector = $config->selector;
                 static::$reflectionCache[$cacheKey] = $selector;
+                Profiler::end('getSelectorFromClass::reflection');
                 return $selector;
             }
 
             $selector = $class;
             static::$reflectionCache[$cacheKey] = $selector;
+            Profiler::end('getSelectorFromClass::reflection');
             return $selector;
         } catch (Throwable) {
             return $class;
@@ -131,6 +212,8 @@ class ComponentRegistry {
      * Get imports from component attribute
      */
     private function getImportsFromComponentAttribute(string $class): array {
+        Profiler::count('getImportsFromComponentAttribute calls');
+
         try {
             $reflection = new ReflectionClass($class);
             $componentAttr = $reflection->getAttributes(Component::class);

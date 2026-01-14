@@ -13,6 +13,7 @@ use function call_user_func;
 #[Injectable(providedIn: 'root')]
 class Router
 {
+    private static array $dispatchCache = [];
     /** @var self|null */
     private static ?self $instance = null;
 
@@ -34,6 +35,8 @@ class Router
     private ?Renderer $renderer = null;
     private ?ComponentRegistry $componentRegistry = null;
     private ?ControllerRegistry $controllerRegistry = null;
+    private static array $routeCache = [];
+    private static array $urlCache = [];
 
     /**
      * Singleton
@@ -60,26 +63,81 @@ class Router
         $uri = $this->getCurrentPath();
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-        // 🔥 PRIORITÀ 1: Controller Routes (API/AJAX)
-        if ($this->tryDispatchController($uri, $method)) {
+        // ⚡ CACHE: Stesso URI + stesso method = stessa route
+        $cacheKey = $method . ':' . $uri;
+
+        if (isset(self::$dispatchCache[$cacheKey])) {
+            $cached = self::$dispatchCache[$cacheKey];
+
+            // Ripristina stato da cache
+            $this->currentRoute = $cached['route'];
+            $this->currentParams = $cached['params'];
+            $this->currentRouteData = $cached['data'];
+
+            // Se è una callback, eseguila
+            if (isset($cached['callback'])) {
+                call_user_func($cached['callback'], $cached['params'], $cached['route']);
+                return;
+            }
+
+            // Se è un componente, renderizzalo
+            if (isset($cached['component'])) {
+                $selector = $this->componentRegistry->lazyRegister($cached['component']);
+                $data = array_merge($cached['params'], ['routeData' => $cached['data']]);
+                echo $this->renderer->renderRoot($selector, $data, $cached['slotContent'] ?? null);
+                return;
+            }
+
+            // Se è un redirect
+            if (isset($cached['redirect'])) {
+                header('Location: ' . $cached['redirect']);
+                exit;
+            }
+
             return;
         }
 
-        // 🔥 PRIORITÀ 2: POST callbacks (form submissions)
+        // ⚡ DISPATCH ORIGINALE (solo se non in cache)
+        $result = $this->doDispatch($uri, $method);
+
+        // ⚡ SALVA in cache
+        if ($result) {
+            self::$dispatchCache[$cacheKey] = $result;
+        }
+    }
+
+    private function doDispatch(string $uri, string $method): ?array
+    {
+        // Priority 1: Controller Routes
+        if ($this->tryDispatchController($uri, $method)) {
+            // Controllers non vanno in cache perché potrebbero avere side effects
+            return null;
+        }
+
+        // Priority 2: POST callbacks
         if (strtoupper($method) === 'POST') {
             foreach ($this->routes as $route) {
                 $routePath = $this->normalizePath($route['path'] ?? '');
                 $match = $this->matchPathWithParams($routePath, $uri, $route);
                 if ($match && isset($route['callback']) && is_callable($route['callback'])) {
                     [$params] = $match;
+
+                    $result = [
+                        'route' => $route,
+                        'params' => $params,
+                        'data' => $route['data'] ?? [],
+                        'callback' => $route['callback'],
+                    ];
+
                     call_user_func($route['callback'], $params, $route);
-                    return;
+                    return $result;
                 }
             }
         }
 
-        // 🔥 PRIORITÀ 3: Nested route chain (layout + children)
+        // Priority 3: Nested route chain
         $chainMatch = $this->matchRouteChain($uri);
+
         if ($chainMatch) {
             [$chain, $params] = $chainMatch;
 
@@ -109,50 +167,77 @@ class Router
 
             if (!empty($mergedGuards)) {
                 if (!$this->executeGuards($mergedGuards)) {
-                    return;
+                    return null;
                 }
             }
 
             if ($redirectTo) {
                 $target = $this->normalizePath($redirectTo);
                 $url = $this->basePath . '/' . $target;
+
+                $result = [
+                    'route' => end($chain),
+                    'params' => $params,
+                    'data' => $mergedData,
+                    'redirect' => $url,
+                ];
+
                 header('Location: ' . $url);
                 exit;
             }
 
             if ($callback) {
+                $result = [
+                    'route' => end($chain),
+                    'params' => $params,
+                    'data' => $mergedData,
+                    'callback' => $callback,
+                ];
+
                 call_user_func($callback, $params, end($chain));
-                return;
+                return $result;
             }
 
             if ($this->renderer && $this->componentRegistry) {
                 $rendered = null;
                 $topIndex = null;
+
                 for ($i = 0; $i < count($chain); $i++) {
                     if (isset($chain[$i]['component'])) {
                         $topIndex = $i;
                         break;
                     }
                 }
+
                 for ($i = count($chain) - 1; $i >= 0; $i--) {
                     $node = $chain[$i];
                     if (!isset($node['component'])) {
                         continue;
                     }
+
                     $componentClass = $node['component'];
                     if (!class_exists($componentClass)) {
                         http_response_code(500);
                         echo "Component '{$componentClass}' not found";
-                        return;
+                        return null;
                     }
+
                     $selector = $this->componentRegistry->lazyRegister($componentClass);
                     $data = array_merge($this->currentParams, ['routeData' => $this->currentRouteData]);
 
                     $slotContent = $rendered !== null ? '<router-outlet name="outlet">' . $rendered . '</router-outlet>' : null;
 
                     if ($i === $topIndex) {
+                        $result = [
+                            'route' => end($chain),
+                            'params' => $params,
+                            'data' => $mergedData,
+                            'component' => $componentClass,
+                            'slotContent' => $slotContent,
+                        ];
+
                         echo $this->renderer->renderRoot($selector, $data, $slotContent);
-                        return;
+                        return $result;
                     } else {
                         $rendered = $this->renderer->renderComponent($selector, $data, $slotContent);
                     }
@@ -160,12 +245,12 @@ class Router
             }
         }
 
-        // 🔥 PRIORITÀ 4: Fallback matching singolo
+        // Priority 4: Fallback matching
         $match = $this->matchRoute($uri);
 
         if (!$match) {
             $this->handleNotFound();
-            return;
+            return null;
         }
 
         [$route, $params] = $match;
@@ -175,20 +260,35 @@ class Router
 
         if (!empty($route['canActivate'])) {
             if (!$this->executeGuards($route['canActivate'])) {
-                return;
+                return null;
             }
         }
 
         if (isset($route['redirectTo'])) {
             $target = $this->normalizePath($route['redirectTo']);
             $url = $this->basePath . '/' . $target;
+
+            $result = [
+                'route' => $route,
+                'params' => $params,
+                'data' => $route['data'] ?? [],
+                'redirect' => $url,
+            ];
+
             header('Location: ' . $url);
             exit;
         }
 
         if (isset($route['callback']) && is_callable($route['callback'])) {
+            $result = [
+                'route' => $route,
+                'params' => $params,
+                'data' => $route['data'] ?? [],
+                'callback' => $route['callback'],
+            ];
+
             call_user_func($route['callback'], $params, $route);
-            return;
+            return $result;
         }
 
         if (isset($route['component'])) {
@@ -197,13 +297,13 @@ class Router
             if (!class_exists($componentClass)) {
                 http_response_code(500);
                 echo "Component '{$componentClass}' not found";
-                return;
+                return null;
             }
 
             if (!$this->renderer || !$this->componentRegistry) {
                 http_response_code(500);
                 echo "Renderer or ComponentRegistry not configured";
-                return;
+                return null;
             }
 
             $selector = $this->componentRegistry->lazyRegister($componentClass);
@@ -211,12 +311,29 @@ class Router
                 'routeData' => $this->currentRouteData,
             ]);
 
+            $result = [
+                'route' => $route,
+                'params' => $params,
+                'data' => $route['data'] ?? [],
+                'component' => $componentClass,
+            ];
+
             echo $this->renderer->renderRoot($selector, $data);
-            return;
+            return $result;
         }
 
         $this->handleNotFound();
+        return null;
     }
+
+    /**
+     * ⚡ Pulisci cache (sviluppo)
+     */
+    public static function clearDispatchCache(): void
+    {
+        self::$dispatchCache = [];
+    }
+
     private function walkControllerRoutes(
         array $routes,
         string $uri,
@@ -235,10 +352,11 @@ class Router
             $guards = array_merge($parentGuards, $route['canActivate'] ?? []);
             $data   = array_merge($parentData, $route['data'] ?? []);
 
-            /** 🔥 CONTROLLER MATCH */
+            // ⚡ CONTROLLER MATCH - con early exit
             if (isset($route['controller'])) {
+                // ⚡ SKIP se path non matcha prefix
                 if ($fullPath !== '' && !str_starts_with($uri, $fullPath)) {
-                    goto recurse;
+                    goto check_children; // ⚡ Evita nesting pesante
                 }
 
                 $relativePath = $fullPath !== ''
@@ -260,7 +378,7 @@ class Router
                 if ($match) {
                     if (!empty($guards)) {
                         if (!$this->executeGuards($guards)) {
-                            return true;
+                            return true; // ⚡ Guard blocked, ma match trovato
                         }
                     }
 
@@ -275,13 +393,13 @@ class Router
                     );
 
                     $this->handleControllerResponse($result);
-                    return true;
+                    return true; // ⚡ FOUND! Exit immediatamente
                 }
             }
 
-            recurse:
+            check_children:
 
-            /** 🔁 CHILDREN */
+            // ⚡ CHILDREN - solo se necessario
             if (!empty($route['children'])) {
                 if ($this->walkControllerRoutes(
                     $route['children'],
@@ -291,11 +409,11 @@ class Router
                     $guards,
                     $data
                 )) {
-                    return true;
+                    return true; // ⚡ Found in children, exit
                 }
             }
 
-            /** 🔁 LAZY IMPORTS */
+            // ⚡ IMPORTS - solo se necessario
             if (!empty($route['imports'])) {
                 foreach ($route['imports'] as $import) {
                     if (!empty($import['children'])) {
@@ -307,7 +425,7 @@ class Router
                             $guards,
                             $data
                         )) {
-                            return true;
+                            return true; // ⚡ Found in imports, exit
                         }
                     }
                 }
@@ -322,12 +440,26 @@ class Router
      */
     private function tryDispatchController(string $uri, string $method): bool
     {
+        // ⚡ SKIP IMMEDIATO se non ci sono controller
+        $hasControllers = false;
+        foreach ($this->routes as $route) {
+            if (isset($route['controller'])) {
+                $hasControllers = true;
+                break;
+            }
+        }
+
+        if (!$hasControllers) {
+            return false; // ⚡ Risparmio: non scansionare se non necessario
+        }
+
         return $this->walkControllerRoutes(
             $this->routes,
             $uri,
             strtoupper($method)
         );
     }
+
 
 
     /**
@@ -462,11 +594,22 @@ class Router
 
     public function url(string $name, array $params = []): string
     {
-        $result = $this->findRouteAndFullPath($name);
-        if (!$result) {
-            return '#';
+        // ⚡ Cache del risultato finale
+        $cacheKey = $name . ':' . json_encode($params);
+        if (isset(self::$urlCache[$cacheKey])) {
+            return self::$urlCache[$cacheKey];
         }
 
+        // ⚡ Cache del lookup della route
+        if (!isset(self::$routeCache[$name])) {
+            $result = $this->findRouteAndFullPath($name);
+            if (!$result) {
+                return '#';
+            }
+            self::$routeCache[$name] = $result;
+        }
+
+        $result = self::$routeCache[$name];
         $route = $result['route'];
         $path = $result['fullPath'];
 
@@ -490,7 +633,21 @@ class Router
             $path = implode('/', $segments);
         }
 
-        return '/' . ltrim($path, '/');
+        $finalUrl = '/' . ltrim($path, '/');
+
+        // ⚡ Salva in cache il risultato
+        self::$urlCache[$cacheKey] = $finalUrl;
+
+        return $finalUrl;
+    }
+
+    /**
+     * ⚡ NUOVO: Pulisce la cache (per sviluppo)
+     */
+    public static function clearUrlCache(): void
+    {
+        self::$routeCache = [];
+        self::$urlCache = [];
     }
 
     private function findRouteAndFullPath(string $name, array $routes = null, string $parentPath = ''): ?array
@@ -570,25 +727,33 @@ class Router
 
     private function matchRouteChain(string $path): ?array
     {
+        // ⚡ Cache dei pattern compilati
+        static $patternCache = [];
+
         foreach ($this->routes as $route) {
-            $res = $this->matchNodeChain($route, $path, '');
-            if ($res) return $res;
+            $res = $this->matchNodeChain($route, $path, '', $patternCache);
+            if ($res) return $res; // ⚡ Exit appena trova
         }
         return null;
     }
 
-    private function matchNodeChain(array $node, string $requestPath, string $accumulated): ?array
+    private function matchNodeChain(array $node, string $requestPath, string $accumulated, array &$patternCache): ?array
     {
         $nodePath = $this->normalizePath($node['path'] ?? '');
         $fullPath = trim(($accumulated !== '' ? ($accumulated . '/') : '') . $nodePath, '/');
 
+        // ⚡ EARLY EXIT: Se path non matcha, skip children
+        if ($fullPath !== '' && !str_starts_with($requestPath, $fullPath) && $requestPath !== $fullPath) {
+            return null; // ⚡ Non può matchare, skip subito
+        }
+
         if (!empty($node['children']) && is_array($node['children'])) {
             foreach ($node['children'] as $child) {
-                $res = $this->matchNodeChain($child, $requestPath, $fullPath);
+                $res = $this->matchNodeChain($child, $requestPath, $fullPath, $patternCache);
                 if ($res) {
                     [$chain, $params] = $res;
                     array_unshift($chain, $node);
-                    return [$chain, $params];
+                    return [$chain, $params]; // ⚡ Exit appena trova
                 }
             }
             return null;
