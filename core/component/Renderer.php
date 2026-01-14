@@ -11,19 +11,15 @@ use ReflectionMethod;
 use ReflectionObject;
 use ReflectionProperty;
 use RuntimeException;
-use Twig\Environment;
 use Sophia\Form\FormRegistry;
 use Sophia\Form\CsrfService;
 use Sophia\Form\FlashService;
 use Sophia\Form\Attributes\FormHandler;
-use Twig\Loader\FilesystemLoader;
-use Twig\TwigFunction;
 
 #[Injectable(providedIn: 'root')]
 class Renderer
 {
     private static mixed $templateDataCache;
-    private Environment $twig;
     private ComponentRegistry $registry;
     private array $templatePaths = [];
 
@@ -57,11 +53,9 @@ class Renderer
 
         $this->registry = $registry ?? ComponentRegistry::getInstance();
         $this->language = $language;
-        $this->initTwig($cachePath, $debug);
         if ($templatesPath !== '') {
             $this->addTemplatePath($templatesPath);
         }
-        $this->registerCustomFunctions();
 
         Profiler::end('Renderer::__construct');
     }
@@ -75,24 +69,7 @@ class Renderer
     {
         $this->language = $language;
         $this->templatePaths = [];
-        $this->initTwig($cachePath, $debug);
         $this->addTemplatePath($templatesPath);
-        $this->registerCustomFunctions();
-    }
-
-    private function initTwig(string $cachePath, bool $debug): void
-    {
-        Profiler::start('initTwig');
-
-        $loader = new FilesystemLoader();
-        $this->twig = new Environment($loader, [
-            'cache' => $cachePath,
-            'auto_reload' => $debug,
-            'debug' => $debug,
-            'strict_variables' => true,
-        ]);
-
-        Profiler::end('initTwig');
     }
 
     private function resolveTemplatePath(string $componentClass, string $template): string
@@ -105,9 +82,8 @@ class Renderer
 
         $fullPath = realpath($componentDir . '/' . $template);
         if ($fullPath && file_exists($fullPath)) {
-            $this->addTemplatePath(dirname($fullPath));
             Profiler::end('resolveTemplatePath');
-            return basename($fullPath);
+            return $fullPath;
         }
 
         $templateName = basename($template);
@@ -115,11 +91,21 @@ class Renderer
             $fullPath = realpath($basePath . '/' . $templateName);
             if ($fullPath && file_exists($fullPath)) {
                 Profiler::end('resolveTemplatePath');
-                return $templateName;
+                return $fullPath;
             }
         }
 
         throw new RuntimeException("Template '{$template}' not found for {$componentClass}");
+    }
+
+    public function addTemplatePath(string $path, ?string $namespace = null): void
+    {
+        $realPath = realpath($path);
+        if (!$realPath || in_array($realPath, $this->templatePaths)) {
+            return;
+        }
+
+        $this->templatePaths[] = $realPath;
     }
 
     public function addGlobalStyle(string $css): void
@@ -335,10 +321,10 @@ class Renderer
         $start = microtime(true);
         $config = $proxy->getConfig();
 
-        $templateName = $this->resolveTemplatePath($proxy->instance::class, $config->template);
+        $templatePath = $this->resolveTemplatePath($proxy->instance::class, $config->template);
         $templateData = $this->extractComponentData($proxy);
 
-        $html = $this->twig->render($templateName, $templateData);
+        $html = $this->renderPhpTemplate($templatePath, $templateData);
 
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
@@ -353,12 +339,117 @@ class Renderer
         }
 
         $this->profilingData[] = [
-            'template' => $templateName,
+            'template' => $templatePath,
             'time' => microtime(true) - $start
         ];
 
         Profiler::end('renderInstance');
         return $html;
+    }
+
+    private function renderPhpTemplate(string $templatePath, array $data): string
+    {
+        // Extract variables to make them available in the template
+        extract($data, EXTR_SKIP);
+
+        // Create helper functions available in templates
+        $component = function(string $selector, array $bindings = [], ?string $slotContent = null) {
+            return $this->renderComponent($selector, $bindings, $slotContent);
+        };
+
+        $slot = function(string $name, array $context = []) use ($data) {
+            if (isset($data['slot']) && is_callable($data['slot'])) {
+                return $data['slot']($name, $context);
+            }
+            return '';
+        };
+
+        $set_title = function(string $title) {
+            $this->pageTitle = $title;
+        };
+
+        $add_meta = function(string $name, string $content) {
+            $this->metaTags[] = '<meta name="' . htmlspecialchars($name) . '" content="' . htmlspecialchars($content) . '">';
+        };
+
+        $route_data = function(?string $key = null) {
+            return $this->getRouteData($key);
+        };
+
+        $url = function(string $name, array $params = []) {
+            return $this->generateUrl($name, $params);
+        };
+
+        $form_action = function(string $name) use ($data) {
+            $class = $data['__component_class'] ?? null;
+            if (!$class) return '#';
+            
+            $uri = $_SERVER['REQUEST_URI'] ?? '/';
+            $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+            $base = Router::getInstance()->getBasePath();
+            if ($base && str_starts_with($path, $base)) {
+                $path = substr($path, strlen($base)) ?: '/';
+            }
+            $routePath = ltrim($path, '/');
+
+            $methodName = self::$formTokensCache[$class][$name] ?? null;
+            if (!$methodName) return '#';
+
+            $token = FormRegistry::getInstance()->registerHandler($class, $name, $methodName, $routePath);
+            $router = Router::getInstance();
+            return $router->url('forms.submit', ['token' => $token]);
+        };
+
+        $csrf_field = function() {
+            $csrf = Injector::inject(CsrfService::class);
+            $token = $csrf->getToken();
+            return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token) . '">';
+        };
+
+        $flash = function(string $key, $default = null) {
+            $flashService = Injector::inject(FlashService::class);
+            return $flashService->pullValue($key, $default);
+        };
+
+        $peek_flash = function(string $key, $default = null) {
+            $flashService = Injector::inject(FlashService::class);
+            return $flashService->getValue($key, $default);
+        };
+
+        $has_flash = function(string $key) {
+            $flashService = Injector::inject(FlashService::class);
+            return $flashService->hasKey($key);
+        };
+
+        $form_errors = function(?string $field = null) {
+            $flashService = Injector::inject(FlashService::class);
+            $errors = $flashService->getValue('__errors', []);
+            if ($field === null) return $errors;
+            return $errors[$field] ?? [];
+        };
+
+        $old = function(string $field, $default = '') {
+            $flashService = Injector::inject(FlashService::class);
+            $oldData = $flashService->getValue('__old', []);
+            return $oldData[$field] ?? $default;
+        };
+
+        // Helper function for safe output (equivalent to {{ variable }})
+        $e = function($value) {
+            if ($value === null) return '';
+            return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        };
+
+        // Start output buffering
+        ob_start();
+        
+        try {
+            include $templatePath;
+            return ob_get_clean();
+        } catch (\Throwable $e) {
+            ob_end_clean();
+            throw new RuntimeException("Error rendering template '{$templatePath}': " . $e->getMessage(), 0, $e);
+        }
     }
     private static array $stylesContentCache = [];
 
@@ -594,89 +685,6 @@ class Renderer
         return $helpers;
     }
 
-    private function registerCustomFunctions(): void
-    {
-        $this->twig->addFunction(new TwigFunction('component', function (string $selector, array $bindings = [], ?string $slotContent = null) {
-            return $this->renderComponent($selector, $bindings, $slotContent);
-        }, ['is_safe' => ['html']]));
-
-        $this->twig->addFunction(new TwigFunction('slot', function (array $twigContext, string $name, array $slotContext = []) {
-            if (isset($twigContext['slot']) && is_callable($twigContext['slot'])) {
-                return $twigContext['slot']($name, $slotContext);
-            }
-            return '';
-        }, ['is_safe' => ['html'], 'needs_context' => true]));
-
-        $this->twig->addFunction(new TwigFunction('set_title', function (string $title) {
-            $this->pageTitle = $title;
-        }));
-
-        $this->twig->addFunction(new TwigFunction('add_meta', function (string $name, string $content) {
-            $this->metaTags[] = '<meta name="' . htmlspecialchars($name) . '" content="' . htmlspecialchars($content) . '">';
-        }));
-
-        $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
-        $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
-
-        $this->twig->addFunction(new TwigFunction('form_action', function (array $context, string $name) {
-            $class = $context['__component_class'] ?? null;
-            if (!$class) return '#';
-            
-            $uri = $_SERVER['REQUEST_URI'] ?? '/';
-            $path = parse_url($uri, PHP_URL_PATH) ?: '/';
-            $base = Router::getInstance()->getBasePath();
-            if ($base && str_starts_with($path, $base)) {
-                $path = substr($path, strlen($base)) ?: '/';
-            }
-            $routePath = ltrim($path, '/');
-
-            $methodName = self::$formTokensCache[$class][$name] ?? null;
-            if (!$methodName) return '#';
-
-            $token = FormRegistry::getInstance()->registerHandler($class, $name, $methodName, $routePath);
-            $router = Router::getInstance();
-            return $router->url('forms.submit', ['token' => $token]);
-        }, ['needs_context' => true]));
-
-        $this->twig->addFunction(
-            new TwigFunction(
-                'csrf_field',
-                function () {
-                    $csrf = Injector::inject(CsrfService::class);
-                    $token = $csrf->getToken();
-                    return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token) . '">';
-                },
-                ['is_safe' => ['html']]
-            )
-        );
-
-        $this->twig->addFunction(new TwigFunction('flash', function (string $key, $default = null) {
-            $flash = Injector::inject(FlashService::class);
-            return $flash->pullValue($key, $default);
-        }));
-        $this->twig->addFunction(new TwigFunction('peek_flash', function (string $key, $default = null) {
-            $flash = Injector::inject(FlashService::class);
-            return $flash->getValue($key, $default);
-        }));
-        $this->twig->addFunction(new TwigFunction('has_flash', function (string $key) {
-            $flash = Injector::inject(FlashService::class);
-            return $flash->hasKey($key);
-        }));
-
-        $this->twig->addFunction(new TwigFunction('form_errors', function (?string $field = null) {
-            $flash = Injector::inject(FlashService::class);
-            $errors = $flash->getValue('__errors', []);
-            if ($field === null) return $errors;
-            return $errors[$field] ?? [];
-        }));
-
-        $this->twig->addFunction(new TwigFunction('old', function (string $field, $default = '') {
-            $flash = Injector::inject(FlashService::class);
-            $old = $flash->getValue('__old', []);
-            return $old[$field] ?? $default;
-        }));
-    }
-
     public function getRouteData(?string $key = null): mixed
     {
         $router = Router::getInstance();
@@ -687,30 +695,6 @@ class Renderer
     {
         $router = Router::getInstance();
         return $router->url($name, $params);
-    }
-
-    public function getTwig(): Environment
-    {
-        return $this->twig;
-    }
-
-    public function addTemplatePath(string $path, ?string $namespace = null): void
-    {
-        $realPath = realpath($path);
-        if (!$realPath || in_array($realPath, $this->templatePaths)) {
-            return;
-        }
-
-        $this->templatePaths[] = $realPath;
-
-        $loader = $this->twig->getLoader();
-        if ($loader instanceof FilesystemLoader) {
-            if ($namespace) {
-                $loader->addPath($realPath, $namespace);
-            } else {
-                $loader->addPath($realPath);
-            }
-        }
     }
 
     /**

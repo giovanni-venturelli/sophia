@@ -8,7 +8,7 @@ use Sophia\Component\SlotContent;
 
 #[Component(
     selector: 'app-header',
-    template: 'header.html.twig',
+    template: 'header.php',
     styles: ['header.css']
 )]
 class HeaderComponent
