@@ -10,7 +10,7 @@ use Shared\Footer\FooterComponent;
 
 #[Component(
     selector: 'app-about-layout',
-    template: 'about-layout.html.twig',
+    template: 'about-layout.php',
     imports: [
         HeaderComponent::class,
         FooterComponent::class

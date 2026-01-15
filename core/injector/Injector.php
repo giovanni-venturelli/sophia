@@ -27,13 +27,8 @@ class Injector
 
         $scopeKey = $scope ? $scope->getId() : 0;
 
-        $serviceName = basename(str_replace('\\', '/', $className));
-        $componentName = $scope && isset($scope->instance) ? basename(str_replace('\\', '/', get_class($scope->instance))) : 'Proxy';
-
         if (isset(static::$treeScopes[$scopeKey][$className])) {
-            $instance = static::$treeScopes[$scopeKey][$className];
-            $itemCount = method_exists($instance, 'getItems') ? count($instance->getItems()) : '?';
-            return $instance;
+            return static::$treeScopes[$scopeKey][$className];
         }
 
         $isProvidedHere = $scope && in_array($className, $scope->getConfig()->providers, true);

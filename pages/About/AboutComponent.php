@@ -9,7 +9,7 @@ use Shared\Header\HeaderComponent;
 
 #[Component(
 selector: 'app-about',
-    template: 'about.html.twig',
+    template: 'about.php',
     imports: [
     HeaderComponent::class,
     FooterComponent::class,

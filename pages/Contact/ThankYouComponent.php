@@ -7,7 +7,7 @@ use Sophia\Router\Router;
 
 #[Component(
     selector: 'app-contact-thank-you',
-    template: 'thank-you.html.twig',
+    template: 'thank-you.php',
     styles: ['thank-you.css']
 )]
 class ThankYouComponent

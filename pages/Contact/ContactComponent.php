@@ -11,7 +11,7 @@ use Sophia\Router\Router;
 
 #[Component(
     selector: 'app-contact',
-    template: 'contact.html.twig',
+    template: 'contact.php',
     styles: ['contact.css']
 )]
 class ContactComponent

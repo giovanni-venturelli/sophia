@@ -2,32 +2,27 @@
 
 namespace Sophia\Component;
 
+use Sophia\Debug\Profiler;
 use Sophia\Injector\Injectable;
 use Sophia\Injector\Injector;
 use Sophia\Router\Router;
 use ReflectionClass;
-use ReflectionException;
 use ReflectionMethod;
 use ReflectionObject;
 use ReflectionProperty;
 use RuntimeException;
-use Twig\Environment;
 use Sophia\Form\FormRegistry;
 use Sophia\Form\CsrfService;
 use Sophia\Form\FlashService;
 use Sophia\Form\Attributes\FormHandler;
-use Twig\Error\LoaderError;
-use Twig\Loader\FilesystemLoader;
-use Twig\TwigFunction;
 
 #[Injectable(providedIn: 'root')]
 class Renderer
 {
-    private Environment $twig;
+    private static mixed $templateDataCache;
     private ComponentRegistry $registry;
     private array $templatePaths = [];
 
-    // 🔥 NUOVO: Accumulatori per risorse globali
     private array $globalStyles = [];
     private array $globalScripts = [];
     private array $globalMetaTags = [];
@@ -38,6 +33,13 @@ class Renderer
     private string $language = 'en';
 
     private array $profilingData = [];
+    private static array $reflectionCache = [];
+    private static array $inputBindingsCache = [];
+    private static array $slotPropertiesCache = [];
+    private static array $publicPropertiesCache = [];
+
+    private static array $formTokensCache = [];
+    private static array $slotMetaCache = [];
 
     public function __construct(
         ?ComponentRegistry $registry = null,
@@ -47,13 +49,15 @@ class Renderer
         bool              $debug = false
     )
     {
+        Profiler::start('Renderer::__construct');
+
         $this->registry = $registry ?? ComponentRegistry::getInstance();
         $this->language = $language;
-        $this->initTwig($cachePath, $debug);
         if ($templatesPath !== '') {
             $this->addTemplatePath($templatesPath);
         }
-        $this->registerCustomFunctions();
+
+        Profiler::end('Renderer::__construct');
     }
 
     public function setRegistry(ComponentRegistry $registry): void
@@ -65,45 +69,44 @@ class Renderer
     {
         $this->language = $language;
         $this->templatePaths = [];
-        $this->initTwig($cachePath, $debug);
         $this->addTemplatePath($templatesPath);
-        // Re-register functions on new Environment
-        $this->registerCustomFunctions();
-    }
-
-    private function initTwig(string $cachePath, bool $debug): void
-    {
-        $loader = new FilesystemLoader();
-        $this->twig = new Environment($loader, [
-            'cache' => $cachePath,
-            'auto_reload' => $debug,
-            'debug' => $debug,
-            'strict_variables' => true,
-        ]);
     }
 
     private function resolveTemplatePath(string $componentClass, string $template): string
     {
+        Profiler::start('resolveTemplatePath');
+        Profiler::count('resolveTemplatePath calls');
+
         $reflection = new ReflectionClass($componentClass);
         $componentDir = dirname($reflection->getFileName());
 
         $fullPath = realpath($componentDir . '/' . $template);
         if ($fullPath && file_exists($fullPath)) {
-            $this->addTemplatePath(dirname($fullPath));
-            return basename($fullPath);
+            Profiler::end('resolveTemplatePath');
+            return $fullPath;
         }
 
         $templateName = basename($template);
         foreach ($this->templatePaths as $basePath) {
             $fullPath = realpath($basePath . '/' . $templateName);
             if ($fullPath && file_exists($fullPath)) {
-                return $templateName;
+                Profiler::end('resolveTemplatePath');
+                return $fullPath;
             }
         }
 
         throw new RuntimeException("Template '{$template}' not found for {$componentClass}");
     }
 
+    public function addTemplatePath(string $path, ?string $namespace = null): void
+    {
+        $realPath = realpath($path);
+        if (!$realPath || in_array($realPath, $this->templatePaths)) {
+            return;
+        }
+
+        $this->templatePaths[] = $realPath;
+    }
 
     public function addGlobalStyle(string $css): void
     {
@@ -131,25 +134,24 @@ class Renderer
         }
         $this->globalScripts[$scriptId] = $path;
     }
+
     public function addGlobalMetaTags(array $tags): void
     {
         foreach($tags as $tag) {
-
             $tagId = 'globalTag-' . uniqid();
             $this->globalMetaTags[$tagId] = $tag;
         }
     }
-    /**
-     * 🔥 NUOVO: Renderizza con layout HTML completo
-     */
+
     public function renderRoot(string $selector, array $data = [], ?string $slotContent = null): string
     {
+        Profiler::start('renderRoot');
+
         $entry = $this->registry->get($selector);
         if (!$entry) {
             throw new RuntimeException("Component {$selector} not found");
         }
 
-        // Reset accumulatori SOLO se non stiamo componendo una catena (nessuno slot passato)
         if ($slotContent === null) {
             $this->componentStyles = [];
             $this->componentScripts = [];
@@ -160,45 +162,38 @@ class Renderer
         $proxy = new ComponentProxy($entry['class'], $entry['config']);
         $this->injectData($proxy, $data);
 
-        // Inietta eventuale contenuto negli slot del root (per layout routing)
         if ($slotContent !== null) {
             $this->injectSlotContent($proxy->instance, $slotContent);
         }
 
-        // Renderizza il componente (questo raccoglie styles/scripts)
         $bodyContent = $this->renderInstance($proxy);
 
         Injector::exitScope();
 
-        // 🔥 Costruisci HTML completo
         $html = $this->buildFullHtml($bodyContent);
-        if ($_ENV['DEBUG'] ?? false) {
-            $html .= "\n<!-- PROFILING:\n";
-            foreach ($this->profilingData as $item) {
-                $html .= sprintf("%s: %.4fs\n", $item['template'], $item['time']);
-            }
-            $html .= "-->";
-        }
+
+        // Aggiungi report profiler
+        $html .= Profiler::getReport();
+
+        Profiler::end('renderRoot');
+
         return $html;
     }
 
-    /**
-     * 🔥 NUOVO: Costruisce la struttura HTML completa
-     */
     private function buildFullHtml(string $bodyContent): string
     {
+        Profiler::start('buildFullHtml');
+
         $html = '<!DOCTYPE html>' . "\n";
         $html .= '<html lang="' . $this->language . '">' . "\n";
         $html .= '<head>' . "\n";
         $html .= '    <meta charset="UTF-8">' . "\n";
         $html .= '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' . "\n";
 
-        // Title
         if ($this->pageTitle) {
             $html .= '    <title>' . htmlspecialchars($this->pageTitle) . '</title>' . "\n";
         }
 
-        // Meta tags
         foreach ($this->metaTags as $meta) {
             $html .= '    ' . $meta . "\n";
         }
@@ -206,7 +201,6 @@ class Renderer
             $html .= '   <meta name="' . htmlspecialchars($tag->name) . '" content="' . htmlspecialchars($tag->content) . '"> \n' ;
         }
 
-        // 🔥 Global Styles
         foreach ($this->globalStyles as $styleId => $css) {
             $html .= '    <link id="' . $styleId . '" rel="stylesheet" href="'.$css.'"></style>' . "\n";
         }
@@ -217,14 +211,11 @@ class Renderer
         $html .= '</head>' . "\n";
         $html .= '<body>' . "\n";
 
-        // 🔥 Body content (componenti renderizzati)
         $html .= $bodyContent . "\n";
 
-        // 🔥 Global Scripts
         foreach ($this->globalScripts as $scriptId => $js) {
             $html .= '    <script id="' . $scriptId . '" type="text/javascript" src="'.$js.'"></script>' . "\n";
         }
-        // 🔥 Global Scripts (alla fine del body)
         foreach ($this->componentScripts as $scriptId => $js) {
             $html .= '    <script id="' . $scriptId . '">' . $js . '</script>' . "\n";
         }
@@ -232,14 +223,16 @@ class Renderer
         $html .= '</body>' . "\n";
         $html .= '</html>';
 
+        Profiler::end('buildFullHtml');
+
         return $html;
     }
 
-    /**
-     * 🔥 AGGIORNATO: supporta slot content
-     */
     public function renderComponent(string $selector, array $bindings = [], ?string $slotContent = null): string
     {
+        Profiler::start("renderComponent::{$selector}");
+        Profiler::count('renderComponent calls');
+
         $entry = $this->registry->get($selector);
         if (!$entry) {
             return "<!-- Component {$selector} not found -->";
@@ -250,7 +243,6 @@ class Renderer
 
         $this->applyInputBindings($proxy->instance, $bindings);
 
-        // 🔥 SLOT INJECTION: inietta il contenuto degli slot nel componente
         if ($slotContent !== null) {
             $this->injectSlotContent($proxy->instance, $slotContent);
         }
@@ -263,40 +255,46 @@ class Renderer
             Injector::exitScope();
         }
 
+        Profiler::end("renderComponent::{$selector}");
+
         return $html;
     }
 
-    /**
-     * 🔥 NUOVO: Inietta il contenuto degli slot nel componente
-     */
     private function injectSlotContent(object $component, string $slotContent): void
     {
         $slots = $this->parseSlotContent($slotContent);
-        $ref = new ReflectionObject($component);
+        $className = get_class($component);
 
-        foreach ($ref->getProperties() as $prop) {
-            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
-            if (!$slotAttr) continue;
+        if (!isset(self::$slotPropertiesCache[$className])) {
+            $ref = new ReflectionObject($component);
+            $slotProps = [];
 
-            $slotConfig = $slotAttr->newInstance();
-            $slotName = $slotConfig->name;
+            foreach ($ref->getProperties() as $prop) {
+                $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
+                if ($slotAttr) {
+                    $slotConfig = $slotAttr->newInstance();
+                    $slotProps[] = [
+                        'name' => $prop->getName(),
+                        'slotName' => $slotConfig->name,
+                    ];
+                }
+            }
+            self::$slotPropertiesCache[$className] = $slotProps;
+        }
 
-            $content = $slots[$slotName] ?? null;
-
-            if ($content) {
-                $prop->setAccessible(true);
-                $prop->setValue($component, $content);
+        foreach (self::$slotPropertiesCache[$className] as $slotInfo) {
+            if (isset($slots[$slotInfo['slotName']])) {
+                $component->{$slotInfo['name']} = $slots[$slotInfo['slotName']];
             }
         }
     }
 
-    /**
-     * 🔥 NUOVO: Parse del contenuto per estrarre gli slot
-     */
     private function parseSlotContent(string $content): array
     {
+        Profiler::start('parseSlotContent');
+        Profiler::count('parseSlotContent calls');
+
         $slots = [];
-        // Supporto storico: <slot name="..."> ... </slot>
         if (preg_match_all('/<slot\s+name=["\']([^"\']+)["\']\s*>(.*?)<\/slot>/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $slotName = trim($match[1]);
@@ -304,7 +302,6 @@ class Renderer
                 $slots[$slotName] = new SlotContent($slotHtml, $slotName);
             }
         }
-        // Nuovo per router layouts: <router-outlet name="..."> ... </router-outlet>
         if (preg_match_all('/<router-outlet\s+name=["\']([^"\']+)["\']\s*>(.*?)<\/router-outlet>/s', $content, $matches2, PREG_SET_ORDER)) {
             foreach ($matches2 as $match) {
                 $slotName = trim($match[1]);
@@ -312,47 +309,160 @@ class Renderer
                 $slots[$slotName] = new SlotContent($slotHtml, $slotName);
             }
         }
+
+        Profiler::end('parseSlotContent');
+
         return $slots;
     }
 
-    /**
-     * 🔥 AGGIORNATO: Renderizza senza iniettare stili inline
-     */
-    private function renderInstance(ComponentProxy $proxy): string
+    public function renderInstance(ComponentProxy $proxy): string
     {
-        Injector::enterScope($proxy);
+        Profiler::start('renderInstance');
         $start = microtime(true);
         $config = $proxy->getConfig();
-        $templateName = $this->resolveTemplatePath($proxy->instance::class, $config->template);
+
+        $templatePath = $this->resolveTemplatePath($proxy->instance::class, $config->template);
         $templateData = $this->extractComponentData($proxy);
 
-        $html = $this->twig->render($templateName, $templateData);
+        $html = $this->renderPhpTemplate($templatePath, $templateData);
 
-        // 🔥 Raccogli styles globalmente invece di iniettarli inline
         if (!empty($config->styles)) {
             $cssContent = $this->loadStyles($proxy->instance::class, $config->styles);
             $styleId = 'style-' . MD5($proxy->instance::class);
-            if(!isset($this->componentStyles[$styleId])) {
-                $this->componentStyles[$styleId] = $cssContent;
-            }
+            $this->componentStyles[$styleId] = $cssContent;
         }
 
-        // 🔥 Raccogli scripts globalmente
         if (!empty($config->scripts)) {
             $jsContent = $this->loadScripts($proxy->instance::class, $config->scripts);
-            $scriptId = 'script-' . uniqid();
+            $scriptId = 'script-' . MD5($proxy->instance::class . implode('', $config->scripts));
             $this->componentScripts[$scriptId] = $jsContent;
         }
 
         $this->profilingData[] = [
-            'template' => $templateName,
+            'template' => $templatePath,
             'time' => microtime(true) - $start
         ];
+
+        Profiler::end('renderInstance');
         return $html;
     }
 
+    private function renderPhpTemplate(string $templatePath, array $data): string
+    {
+        // Extract variables to make them available in the template
+        extract($data, EXTR_SKIP);
+
+        // Create helper functions available in templates
+        $component = function(string $selector, array $bindings = [], ?string $slotContent = null) {
+            return $this->renderComponent($selector, $bindings, $slotContent);
+        };
+
+        $slot = function(string $name, array $context = []) use ($data) {
+            if (isset($data['slot']) && is_callable($data['slot'])) {
+                return $data['slot']($name, $context);
+            }
+            return '';
+        };
+
+        $set_title = function(string $title) {
+            $this->pageTitle = $title;
+        };
+
+        $add_meta = function(string $name, string $content) {
+            $this->metaTags[] = '<meta name="' . htmlspecialchars($name) . '" content="' . htmlspecialchars($content) . '">';
+        };
+
+        $route_data = function(?string $key = null) {
+            return $this->getRouteData($key);
+        };
+
+        $url = function(string $name, array $params = []) {
+            return $this->generateUrl($name, $params);
+        };
+
+        $form_action = function(string $name) use ($data) {
+            $class = $data['__component_class'] ?? null;
+            if (!$class) return '#';
+            
+            $uri = $_SERVER['REQUEST_URI'] ?? '/';
+            $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+            $base = Router::getInstance()->getBasePath();
+            if ($base && str_starts_with($path, $base)) {
+                $path = substr($path, strlen($base)) ?: '/';
+            }
+            $routePath = ltrim($path, '/');
+
+            $methodName = self::$formTokensCache[$class][$name] ?? null;
+            if (!$methodName) return '#';
+
+            $token = FormRegistry::getInstance()->registerHandler($class, $name, $methodName, $routePath);
+            $router = Router::getInstance();
+            return $router->url('forms.submit', ['token' => $token]);
+        };
+
+        $csrf_field = function() {
+            $csrf = Injector::inject(CsrfService::class);
+            $token = $csrf->getToken();
+            return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token) . '">';
+        };
+
+        $flash = function(string $key, $default = null) {
+            $flashService = Injector::inject(FlashService::class);
+            return $flashService->pullValue($key, $default);
+        };
+
+        $peek_flash = function(string $key, $default = null) {
+            $flashService = Injector::inject(FlashService::class);
+            return $flashService->getValue($key, $default);
+        };
+
+        $has_flash = function(string $key) {
+            $flashService = Injector::inject(FlashService::class);
+            return $flashService->hasKey($key);
+        };
+
+        $form_errors = function(?string $field = null) {
+            $flashService = Injector::inject(FlashService::class);
+            $errors = $flashService->getValue('__errors', []);
+            if ($field === null) return $errors;
+            return $errors[$field] ?? [];
+        };
+
+        $old = function(string $field, $default = '') {
+            $flashService = Injector::inject(FlashService::class);
+            $oldData = $flashService->getValue('__old', []);
+            return $oldData[$field] ?? $default;
+        };
+
+        // Helper function for safe output (equivalent to {{ variable }})
+        $e = function($value) {
+            if ($value === null) return '';
+            return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        };
+
+        // Start output buffering
+        ob_start();
+        
+        try {
+            include $templatePath;
+            return ob_get_clean();
+        } catch (\Throwable $e) {
+            ob_end_clean();
+            throw new RuntimeException("Error rendering template '{$templatePath}': " . $e->getMessage(), 0, $e);
+        }
+    }
+    private static array $stylesContentCache = [];
+
     private function loadStyles(string $componentClass, array $styles): string
     {
+        Profiler::count('loadStyles calls');
+
+        // ⚡ CACHE: Contenuto CSS una volta sola per classe
+        $cacheKey = $componentClass;
+        if (isset(self::$stylesContentCache[$cacheKey])) {
+            return self::$stylesContentCache[$cacheKey];
+        }
+
         $reflection = new ReflectionClass($componentClass);
         $componentDir = dirname($reflection->getFileName());
         $cssContent = '';
@@ -365,11 +475,21 @@ class Renderer
             $cssContent .= file_get_contents($cssPath) . "\n\n";
         }
 
+        self::$stylesContentCache[$cacheKey] = $cssContent;
         return $cssContent;
     }
+    private static array $scriptsContentCache = [];
 
     private function loadScripts(string $componentClass, array $scripts): string
     {
+        Profiler::count('loadScripts calls');
+
+        // ⚡ CACHE: Contenuto JS una volta sola per classe
+        $cacheKey = $componentClass;
+        if (isset(self::$scriptsContentCache[$cacheKey])) {
+            return self::$scriptsContentCache[$cacheKey];
+        }
+
         $reflection = new ReflectionClass($componentClass);
         $componentDir = dirname($reflection->getFileName());
         $jsContent = '';
@@ -383,24 +503,49 @@ class Renderer
             $jsContent .= file_get_contents($jsPath) . "\n";
         }
 
+        self::$scriptsContentCache[$cacheKey] = $jsContent;
         return $jsContent;
     }
 
+
     private function applyInputBindings(object $component, array $bindings): void
     {
-        $ref = new ReflectionObject($component);
-        foreach ($ref->getProperties() as $prop) {
-            $inputAttr = $prop->getAttributes(Input::class)[0] ?? null;
-            if (!$inputAttr) continue;
+        if (empty($bindings)) return;
 
-            $input = $inputAttr->newInstance();
-            $name = $input->alias ?? $prop->getName();
-            if (!array_key_exists($name, $bindings)) continue;
+        Profiler::start('applyInputBindings');
+        Profiler::count('applyInputBindings calls');
 
-            $prop->setAccessible(true);
-            $prop->setValue($component, $bindings[$name]);
+        $className = get_class($component);
+
+        // ⚡ CACHE: Mappa input una volta sola per classe
+        if (!isset(self::$inputBindingsCache[$className])) {
+            $ref = new ReflectionObject($component);
+            $inputMap = [];
+
+            foreach ($ref->getProperties() as $prop) {
+                $inputAttr = $prop->getAttributes(Input::class)[0] ?? null;
+                if ($inputAttr) {
+                    $input = $inputAttr->newInstance();
+                    $name = $input->alias ?? $prop->getName();
+                    $inputMap[$name] = $prop->getName();
+                }
+            }
+
+            self::$inputBindingsCache[$className] = $inputMap;
         }
+
+        $inputMap = self::$inputBindingsCache[$className];
+
+        // ⚡ Applica bindings velocemente
+        foreach ($bindings as $name => $value) {
+            if (isset($inputMap[$name])) {
+                $component->{$inputMap[$name]} = $value;
+            }
+        }
+
+        Profiler::end('applyInputBindings');
     }
+
 
     private function injectData(ComponentProxy $proxy, array $data): void
     {
@@ -412,222 +557,133 @@ class Renderer
         }
     }
 
-    /**
-     * 🔥 AGGIORNATO: Estrae i dati e gestisce automaticamente gli slot + metodi callable
-     */
     private function extractComponentData(ComponentProxy $proxy): array
     {
-
-        $data = [];
         $instance = $proxy->instance;
-        $reflection = new ReflectionObject($instance);
+        $className = get_class($instance);
+        $data = [];
 
-        // Slot helpers (già ok)
-        $slotHelpers = $this->generateSlotHelpers($reflection, $instance);
+        // 1. Slot Helpers
+        Profiler::start('extractComponentData::slots');
+        $slotHelpers = $this->generateSlotHelpers(new ReflectionObject($instance), $instance);
         $data = array_merge($data, $slotHelpers);
+        Profiler::end('extractComponentData::slots');
 
-        // ✅ NUOVO: Oggetto component con tutti i metodi pubblici
-        $componentContext = new class($instance) {
-            public function __construct(private $instance) {}
-            public function __call(string $name, array $arguments) {
-                $reflection = new ReflectionObject($this->instance);
-                if ($method = $reflection->getMethod($name)) {
-                    return $method->invoke($this->instance, ...$arguments);
+        // 2. Component Instance (for method calls in twig)
+        $data['component'] = $instance;
+
+        // 3. Properties Cache
+        Profiler::start('extractComponentData::properties');
+        if (!isset(self::$publicPropertiesCache[$className])) {
+            $reflection = new ReflectionObject($instance);
+            $props = [];
+            foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
+                $props[] = $prop->getName();
+            }
+            self::$publicPropertiesCache[$className] = $props;
+        }
+
+        foreach (self::$publicPropertiesCache[$className] as $propName) {
+            $value = $instance->$propName;
+            $data[$propName] = ($value instanceof SlotContent) ? $value->html : $value;
+        }
+        Profiler::end('extractComponentData::properties');
+
+        // 4. Getters Cache
+        Profiler::start('extractComponentData::getters');
+        if (!isset(self::$templateDataCache[$className]['getters'])) {
+            $reflection = new ReflectionObject($instance);
+            $getters = [];
+            foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+                if (str_starts_with($method->getName(), 'get') && $method->getNumberOfRequiredParameters() === 0) {
+                    $propertyName = lcfirst(substr($method->getName(), 3));
+                    $getters[$propertyName] = $method->getName();
                 }
-                throw new \BadMethodCallException("Method $name not found");
             }
-        };
-        $data['component'] = $componentContext;
-
-        // Proprietà pubbliche
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $prop) {
-            $value = $prop->getValue($instance);
-            if ($value instanceof SlotContent) {
-                $data[$prop->getName()] = $value->html;
-            } else {
-                $data[$prop->getName()] = $value;
-            }
+            self::$templateDataCache[$className]['getters'] = $getters;
         }
 
-        // Getter methods
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (str_starts_with($method->getName(), 'get') && $method->getNumberOfRequiredParameters() === 0) {
-                $propertyName = lcfirst(substr($method->getName(), 3));
-                $data[$propertyName] = $method->invoke($instance);
-            }
+        foreach (self::$templateDataCache[$className]['getters'] as $propName => $methodName) {
+            $data[$propName] = $instance->$methodName();
         }
-        // 🔥 Form handlers: registra i metodi marcati con #[FormHandler('name')]
-        $formTokens = [];
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            $attrs = $method->getAttributes(FormHandler::class);
-            if (!$attrs) continue;
-            foreach ($attrs as $attr) {
-                /** @var FormHandler $meta */
-                $meta = $attr->newInstance();
-                $name = $meta->name;
-                $methodName = $method->getName();
-                // Compute current route path similar to Router::getCurrentPath()
-                $uri = $_SERVER['REQUEST_URI'] ?? '/';
-                $path = parse_url($uri, PHP_URL_PATH) ?: '/';
-                $base = Router::getInstance()->getBasePath();
-                if ($base && str_starts_with($path, $base)) {
-                    $path = substr($path, strlen($base));
-                    if ($path === '') { $path = '/'; }
+        Profiler::end('extractComponentData::getters');
+
+        // 5. Form Tokens Cache
+        Profiler::start('extractComponentData::forms');
+        if (!isset(self::$formTokensCache[$className])) {
+            $reflection = new ReflectionObject($instance);
+            $handlers = [];
+            foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+                $attrs = $method->getAttributes(FormHandler::class);
+                if ($attrs) {
+                    foreach ($attrs as $attr) {
+                        $meta = $attr->newInstance();
+                        $handlers[$meta->name] = $method->getName();
+                    }
                 }
-                $routePath = ltrim($path, '/');
-                $token = FormRegistry::getInstance()->registerHandler($reflection->getName(), $name, $methodName, $routePath);
-                $formTokens[$name] = $token;
             }
+            self::$formTokensCache[$className] = $handlers;
         }
-        if (!empty($formTokens)) {
+
+        if (!empty(self::$formTokensCache[$className])) {
+            $formTokens = [];
+            $uri = $_SERVER['REQUEST_URI'] ?? '/';
+            $path = parse_url($uri, PHP_URL_PATH) ?: '/';
+            $base = Router::getInstance()->getBasePath();
+            if ($base && str_starts_with($path, $base)) {
+                $path = substr($path, strlen($base)) ?: '/';
+            }
+            $routePath = ltrim($path, '/');
+
+            foreach (self::$formTokensCache[$className] as $formName => $methodName) {
+                $formTokens[$formName] = FormRegistry::getInstance()->registerHandler($className, $formName, $methodName, $routePath);
+            }
             $data['__form_tokens'] = $formTokens;
-            $data['__component_class'] = $reflection->getName();
+            $data['__component_class'] = $className;
         }
+        Profiler::end('extractComponentData::forms');
 
         return $data;
     }
 
-    /**
-     * 🔥 NUOVO: Genera callables per tutti i metodi pubblici del componente
-     */
-    private function generateMethodCallables(ReflectionObject $reflection, object $instance): array
-    {
-        $callables = [];
 
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            $methodName = $method->getName();
-
-            // Salta costruttore, magic methods e lifecycle hooks
-            if ($methodName === '__construct'
-                || str_starts_with($methodName, '__')
-                || $methodName === 'onInit'
-                || $methodName === 'onDestroy') {
-                continue;
-            }
-
-            // Crea una closure che chiama il metodo
-            $callables[$methodName] = function (...$args) use ($instance, $method) {
-                return $method->invoke($instance, ...$args);
-            };
-        }
-
-        return $callables;
-    }
-
-    /**
-     * 🔥 NUOVO: Genera automaticamente gli helper per gli slot
-     */
     private function generateSlotHelpers(ReflectionObject $reflection, object $instance): array
     {
+        $className = get_class($instance);
         $helpers = [];
         $slotObjects = [];
 
-        foreach ($reflection->getProperties() as $prop) {
-            $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
-            if (!$slotAttr) continue;
+        if (!isset(self::$slotMetaCache[$className])) {
+            $meta = [];
+            foreach ($reflection->getProperties() as $prop) {
+                $slotAttr = $prop->getAttributes(Slot::class)[0] ?? null;
+                if ($slotAttr) {
+                    $slotConfig = $slotAttr->newInstance();
+                    $propName = $prop->getName();
+                    $meta[] = [
+                        'prop' => $propName,
+                        'base' => str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName,
+                        'slotName' => $slotConfig->name
+                    ];
+                }
+            }
+            self::$slotMetaCache[$className] = $meta;
+        }
 
-            $prop->setAccessible(true);
-            $slotContent = $prop->getValue($instance);
-
-            $propName = $prop->getName();
-            $baseName = str_ends_with($propName, 'Slot') ? substr($propName, 0, -4) : $propName;
-
-            $helpers['has' . ucfirst($baseName)] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
-
+        foreach (self::$slotMetaCache[$className] as $m) {
+            $slotContent = $instance->{$m['prop']} ?? null;
+            $helpers['has' . ucfirst($m['base'])] = $slotContent instanceof SlotContent && !$slotContent->isEmpty();
             if ($slotContent instanceof SlotContent) {
-                $slotObjects[$baseName] = $slotContent;
+                $slotObjects[$m['base']] = $slotContent;
             }
         }
 
         $helpers['slot'] = function (string $name, array $context = []) use ($slotObjects) {
             $slotContent = $slotObjects[$name] ?? null;
-            if (!$slotContent || $slotContent->isEmpty()) return '';
-            return $slotContent->render($context);
+            return ($slotContent && !$slotContent->isEmpty()) ? $slotContent->render($context) : '';
         };
 
         return $helpers;
-    }
-
-    private function registerCustomFunctions(): void
-    {
-        $this->twig->addFunction(new TwigFunction('component', function (string $selector, array $bindings = [], ?string $slotContent = null) {
-            return $this->renderComponent($selector, $bindings, $slotContent);
-        }, ['is_safe' => ['html']]));
-
-        $this->twig->addFunction(new TwigFunction('slot', function (array $twigContext, string $name, array $slotContext = []) {
-            if (isset($twigContext['slot']) && is_callable($twigContext['slot'])) {
-                return $twigContext['slot']($name, $slotContext);
-            }
-            return '';
-        }, ['is_safe' => ['html'], 'needs_context' => true]));
-
-        // 🔥 NUOVO: Funzione per settare il title della pagina
-        $this->twig->addFunction(new TwigFunction('set_title', function (string $title) {
-            $this->pageTitle = $title;
-        }));
-
-        // 🔥 NUOVO: Funzione per aggiungere meta tags
-        $this->twig->addFunction(new TwigFunction('add_meta', function (string $name, string $content) {
-            $this->metaTags[] = '<meta name="' . htmlspecialchars($name) . '" content="' . htmlspecialchars($content) . '">';
-        }));
-
-        $this->twig->addFunction(new TwigFunction('route_data', [$this, 'getRouteData']));
-        $this->twig->addFunction(new TwigFunction('url', [$this, 'generateUrl']));
-
-        // Forms: action URL helper
-        $this->twig->addFunction(new TwigFunction('form_action', function (array $context, string $name) {
-            $class = $context['__component_class'] ?? null;
-            if (!$class) return '#';
-            $token = FormRegistry::getInstance()->getTokenFor($class, $name);
-            if (!$token) return '#';
-            $router = Router::getInstance();
-            // named route
-            return $router->url('forms.submit', ['token' => $token]);
-        }, ['needs_context' => true]));
-
-        // CSRF hidden input field
-        $this->twig->addFunction(
-            new TwigFunction(
-                'csrf_field',
-                function () {
-                    $csrf = Injector::inject(CsrfService::class);
-                    $token = $csrf->getToken();
-                    return '<input type="hidden" name="_csrf" value="' . htmlspecialchars($token) . '">';
-                },
-                ['is_safe' => ['html']]
-            )
-        );
-
-        // Flash helpers (injectable services)
-        // flash(): consume-on-read (pull)
-        $this->twig->addFunction(new TwigFunction('flash', function (string $key, $default = null) {
-            $flash = Injector::inject(FlashService::class);
-            return $flash->pullValue($key, $default);
-        }));
-        // peek_flash(): read without consuming
-        $this->twig->addFunction(new TwigFunction('peek_flash', function (string $key, $default = null) {
-            $flash = Injector::inject(FlashService::class);
-            return $flash->getValue($key, $default);
-        }));
-        $this->twig->addFunction(new TwigFunction('has_flash', function (string $key) {
-            $flash = Injector::inject(FlashService::class);
-            return $flash->hasKey($key);
-        }));
-
-        // Validation errors helper
-        $this->twig->addFunction(new TwigFunction('form_errors', function (?string $field = null) {
-            $flash = Injector::inject(FlashService::class);
-            $errors = $flash->getValue('__errors', []);
-            if ($field === null) return $errors;
-            return $errors[$field] ?? [];
-        }));
-
-        // Old input helper
-        $this->twig->addFunction(new TwigFunction('old', function (string $field, $default = '') {
-            $flash = Injector::inject(FlashService::class);
-            $old = $flash->getValue('__old', []);
-            return $old[$field] ?? $default;
-        }));
     }
 
     public function getRouteData(?string $key = null): mixed
@@ -642,27 +698,15 @@ class Renderer
         return $router->url($name, $params);
     }
 
-    public function getTwig(): Environment
+    /**
+     * Aggiungi questo metodo per pulire le cache in sviluppo:
+     */
+    public static function clearCaches(): void
     {
-        return $this->twig;
-    }
-
-    public function addTemplatePath(string $path, ?string $namespace = null): void
-    {
-        $realPath = realpath($path);
-        if (!$realPath || in_array($realPath, $this->templatePaths)) {
-            return;
-        }
-
-        $this->templatePaths[] = $realPath;
-
-        $loader = $this->twig->getLoader();
-        if ($loader instanceof FilesystemLoader) {
-            if ($namespace) {
-                $loader->addPath($realPath, $namespace);
-            } else {
-                $loader->addPath($realPath);
-            }
-        }
+        self::$reflectionCache = [];
+        self::$inputBindingsCache = [];
+        self::$slotPropertiesCache = [];
+        self::$stylesContentCache = [];
+        self::$scriptsContentCache = [];
     }
 }
