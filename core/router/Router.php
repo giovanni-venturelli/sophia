@@ -743,8 +743,11 @@ class Router
         $fullPath = trim(($accumulated !== '' ? ($accumulated . '/') : '') . $nodePath, '/');
 
         // ⚡ EARLY EXIT: Se path non matcha, skip children
-        if ($fullPath !== '' && !str_starts_with($requestPath, $fullPath) && $requestPath !== $fullPath) {
-            return null; // ⚡ Non può matchare, skip subito
+        // Ma solo se non ci sono parametri dinamici (es. :id, :token)
+        if ($fullPath !== '' && !str_contains($fullPath, ':')) {
+            if (!str_starts_with($requestPath, $fullPath) && $requestPath !== $fullPath) {
+                return null; // ⚡ Non può matchare, skip subito
+            }
         }
 
         if (!empty($node['children']) && is_array($node['children'])) {
