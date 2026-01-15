@@ -9,7 +9,7 @@ use App\Services\AppService;
 
 #[Component(
     selector: 'app-feature-card',
-    template: 'feature-card.html.twig',
+    template: 'feature-card.php',
     styles: ['feature-card.css'],
     providers: [AppService::class]
 )]

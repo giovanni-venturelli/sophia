@@ -17,7 +17,7 @@ use Shared\Header\HeaderComponent;
 
 #[Component(
     selector: 'app-home',
-    template: 'home.html.twig',
+    template: 'home.php',
     imports: [
         HeaderComponent::class,
         FooterComponent::class,

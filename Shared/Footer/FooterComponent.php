@@ -8,7 +8,7 @@ use App\Services\AppService;
 
 #[Component(
     selector: 'app-footer',
-    template: 'footer.html.twig',
+    template: 'footer.php',
     styles: ['footer.css']
 )]
 class FooterComponent
