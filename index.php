@@ -13,7 +13,7 @@ $_performance_memory_start = memory_get_usage();
 
 require __DIR__ . '/vendor/autoload.php';
 
-$basePath = '/sophia';
+$basePath = 'sophia';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
@@ -48,8 +48,8 @@ $registry->boot(__DIR__ . '/Shared');
 $isDebug = $_ENV['DEBUG'] ?? false;
 $renderer->configure($templatesPath, $isDebug ? '' : $cachePath, 'it', $isDebug);
 
-$renderer->addGlobalStyle('/sophia/css/style.css');
-$renderer->addGlobalScripts('/sophia/js/scripts.js');
+$renderer->addGlobalStyle('css/style.css');
+$renderer->addGlobalScripts('js/scripts.js');
 
 /** @var Router $router */
 $router = Injector::inject(Router::class);
