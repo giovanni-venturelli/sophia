@@ -1,13 +1,13 @@
-Framework Overview — Lightweight PHP Components, DI, and Router
+Sophia Framework — Lightweight PHP Components, DI, and Router
 =============================================================
 
-This repository contains a minimal, production‑oriented PHP framework that blends:
-- Component-based rendering with Twig
-- A tiny, Angular‑inspired Dependency Injection system
-- A simple but capable Router (components, API callbacks, parameters, guards)
-- Optional database layer with a fluent QueryBuilder and Active Record‑style ORM
+Minimal, production‑oriented PHP framework with:
+- Component-based rendering with native PHP templates
+- Angular‑inspired Dependency Injection system
+- Simple Router (components, API callbacks, parameters, guards)
+- Optional database layer with fluent QueryBuilder and Active Record ORM
 
-It is designed to be clear, explicit, and easy to extend. Components are plain PHP classes (annotated), services are auto‑wired, and routes map requests to either components (views) or callbacks (APIs).
+Components are plain PHP classes (annotated), services are auto‑wired, routes map to components (views) or callbacks (APIs).
 
 
 Quick navigation
@@ -23,30 +23,30 @@ Quick navigation
 - [Database integration (optional)](#database-integration-optional)
 - [Troubleshooting](#troubleshooting)
 - [Deep dives (module READMEs)](#deep-dives-module-readmes)
-- [Including other READMEs by reference](#including-other-readmes-by-reference)
+- [Migration from Twig to native PHP](#migration-from-twig-to-native-php)
 
 
 What you get (features)
 -----------------------
-- Components rendered with Twig, with strict templates and a small set of helpers
+- Components rendered with native PHP templates and helper functions
 - Property injection in components and constructor injection in services
 - Root singletons via `#[Injectable(providedIn: 'root')]`
-- Route configuration with parameters, named routes, redirects, nested routes, and simple guards
-- Optional database service with fluent QueryBuilder and Active Record‑style entities
+- Route configuration with parameters, named routes, redirects, nested routes, guards
+- Optional database service with fluent QueryBuilder and Active Record entities
 
 
 Architecture at a glance
 ------------------------
 - Components: `core/component` (attributes, registry, renderer)
 - DI (Injector): `core/injector` (root singletons + per‑component scoped providers)
-- Router: `core/router` (maps requests to components or callbacks; integrates with renderer)
+- Router: `core/router` (maps requests to components or callbacks)
 - Database (optional): `core/database` (connection service + ORM)
 
 Flow for a component route:
-1) `Router` matches the incoming path → selects a component class.
-2) `ComponentRegistry` lazily registers it and `Renderer` creates a `ComponentProxy`.
-3) `ComponentProxy` opens a DI scope, warms providers, creates the component, runs property injection, then `onInit()`.
-4) `Renderer` collects public properties/zero‑arg getters and renders the Twig template.
+1) `Router` matches the incoming path → selects a component class
+2) `ComponentRegistry` lazily registers it and `Renderer` creates a `ComponentProxy`
+3) `ComponentProxy` opens a DI scope, warms providers, creates the component, runs property injection, then `onInit()`
+4) `Renderer` collects public properties/zero‑arg getters and renders the PHP template
 
 
 Installation
@@ -68,11 +68,11 @@ Project structure
 ├─ core/
 │  ├─ component/     # Component system (attributes, registry, renderer)
 │  ├─ injector/      # DI container + attributes
-│  ├─ router/        # Router + middleware interface
+│  ├─ router/        # Router + middleware
 │  └─ database/      # Optional DB service + ORM
-├─ pages/            # Your component classes and Twig templates
+├─ pages/            # Your component classes and PHP templates
 ├─ routes.php        # Route table
-├─ index.php         # App bootstrap (renderer + router wiring)
+├─ index.php         # App bootstrap
 └─ vendor/           # Composer dependencies
 ```
 
@@ -107,7 +107,7 @@ $registry = ComponentRegistry::getInstance();
 /** @var Renderer $renderer */
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
-$renderer->configure(__DIR__ . '/pages', __DIR__ . '/cache/twig', 'it', true);
+$renderer->configure(__DIR__ . '/pages', '', 'it', true);
 $renderer->addGlobalStyle('css/style.css');
 $renderer->addGlobalScripts('js/scripts.js');
 
@@ -142,14 +142,14 @@ $router->configure([
 
 Create your first component
 ---------------------------
-Component class under `pages/...` and a Twig template next to it (or inside the configured pages path):
+Component class under `pages/...` and a PHP template next to it:
 ```php
 <?php
 namespace App\Pages\Home;
 
 use Sophia\Component\Component;
 
-#[Component(selector: 'app-home', template: 'home.html.twig')]
+#[Component(selector: 'app-home', template: 'home.php')]
 class HomeComponent
 {
     public string $title = 'Welcome';
@@ -161,12 +161,12 @@ class HomeComponent
     }
 }
 ```
-Template `home.html.twig`:
-```twig
-<h1>{{ title }}</h1>
-<p>User ID: {{ id }}</p>
+Template `home.php`:
+```php
+<h1><?= $e($title) ?></h1>
+<p>User ID: <?= $e($id) ?></p>
 ```
-The renderer will pass route params (`:id`) as initial data to the root component, so `id` will be available.
+The renderer passes route params (`:id`) as initial data to the root component.
 
 
 Dependency Injection (services)
@@ -187,10 +187,10 @@ class Logger { public function info(string $m): void {} }
 #[Injectable]
 class UserService { public function __construct(private Logger $log) {} }
 
-#[Component(selector: 'app-users', template: 'users.html.twig', providers: [UserService::class])]
+#[Component(selector: 'app-users', template: 'users.php', providers: [UserService::class])]
 class UsersComponent
 {
-    #[Inject] private UserService $users; // resolved from providers
+    #[Inject] private UserService $users;
     public array $active = [];
 
     public function onInit(): void { $this->active = $this->users->getActive(); }
@@ -201,14 +201,14 @@ See the full DI reference: [Injector (DI)](core/injector/README.md).
 
 Routing basics (components, params, urls)
 ----------------------------------------
-- Define paths like `post/:id` to capture params; they are available to components and templates.
-- Name routes with `name` and generate URLs from PHP or Twig using the `url()` helper.
-- Provide `data` on routes; read them in Twig with `route_data()`.
+- Define paths like `post/:id` to capture params; available to components and templates
+- Name routes with `name` and generate URLs using the `url()` helper
+- Provide `data` on routes; read them with `route_data()`
 
-Twig helpers from the renderer:
-```twig
-<a href="{{ url('home', { id: 123 }) }}">Go home</a>
-<p>Title: {{ route_data('title') }}</p>
+Template helpers:
+```php
+<a href="<?= $e($url('home', ['id' => 123])) ?>">Go home</a>
+<p>Title: <?= $e($route_data('title')) ?></p>
 ```
 More details: [Router](core/router/README.md).
 
@@ -237,10 +237,10 @@ Full guide: [Database](core/database/README.md).
 
 Troubleshooting
 ---------------
-- Template not found: ensure the file exists next to the component class or in a path added to the renderer.
-- Undefined Twig variable: templates run with strict variables; expose data via public properties or zero‑arg getters.
-- Injection error: add `#[Inject]` to typed component properties; mark services as `#[Injectable]` (root when needed) and/or list them in `providers`.
-- Routing mismatch: check `basePath`, path normalization, and that names/params match when calling `url()`.
+- Template not found: ensure the file exists next to the component class or in a path added to the renderer
+- Undefined variable: expose data via public properties or zero‑arg getters
+- Injection error: add `#[Inject]` to typed component properties; mark services as `#[Injectable]` and/or list them in `providers`
+- Routing mismatch: check `basePath`, path normalization, and that names/params match when calling `url()`
 
 
 Deep dives (module READMEs)
@@ -249,6 +249,9 @@ Deep dives (module READMEs)
 - Injector (DI): [Injector (DI)](core/injector/README.md)
 - Router: [Router](core/router/README.md)
 - Database: [Database](core/database/README.md)
+- Templates: [Templates Guide](TEMPLATES.md)
+- Forms: [Forms Guide](core/form/README.md)
+
 
 
 
@@ -306,16 +309,6 @@ git push origin v0.1.0
 
 After publish, consumers can `composer require giovanni-venturelli/sophia`.
 
-
-
-What's new (highlights)
------------------------
-- Router and Renderer are now injectable root services (`#[Injectable(providedIn: 'root')]`), obtainable via `Injector::inject(...)`.
-- `Renderer::configure()` lets you (re)initialize templates path, cache, language, and debug at runtime.
-- Global assets APIs on the renderer: `addGlobalStyle()`, `addGlobalScripts()`, `addGlobalMetaTags()`.
-- Rich Twig helper set: `component`, `slot`, `url`, `route_data`, `form_action`, `csrf_field`, `flash`/`peek_flash`/`has_flash`, `form_errors`, `old`, `set_title`, `add_meta`.
-- Base path is a single source of truth: set it only once in the bootstrap (`index.php` or `demo/index.php`).
-
 Forms — end-to-end example
 --------------------------
 Route (already present in `routes.php`):
@@ -326,14 +319,14 @@ Route (already present in `routes.php`):
   'name' => 'forms.submit'
 ],
 ```
-Twig template:
-```twig
-<form method="post" action="{{ form_action('send') }}">
-  {{ csrf_field()|raw }}
+Template:
+```php
+<form method="post" action="<?= $e($form_action('send')) ?>">
+  <?= $csrf_field() ?>
   <!-- fields -->
 </form>
 ```
-The `form_action('send')` helper generates a URL like `/sophia/forms/submit/<token>` (or `/sophia/demo/...` in the demo). Make sure the base path is set in `index.php` and not in `routes.php`.
+The `$form_action('send')` helper generates a URL like `/sophia/forms/submit/<token>`. Make sure the base path is set in `index.php`.
 
 Named routes — quick tip
 ------------------------
@@ -346,7 +339,7 @@ Always add `name` to routes you want to link to from templates:
   'children' => include __DIR__ . '/pages/About/routes.php'
 ]
 ```
-Then in Twig:
-```twig
-<a href="{{ url('about') }}">About</a>
+Then in templates:
+```php
+<a href="<?= $e($url('about')) ?>">About</a>
 ```
