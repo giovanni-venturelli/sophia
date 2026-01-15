@@ -160,7 +160,10 @@ class Renderer
         }
 
         $proxy = new ComponentProxy($entry['class'], $entry['config']);
-        $this->injectData($proxy, $data);
+        $this->applyInputBindings($proxy->instance, $data);
+
+        // ⚡ Chiama onInit() DOPO aver applicato i bindings
+        $proxy->callOnInit();
 
         if ($slotContent !== null) {
             $this->injectSlotContent($proxy->instance, $slotContent);
@@ -242,6 +245,9 @@ class Renderer
         $proxy = new ComponentProxy($entry['class'], $entry['config'], $parentScope);
 
         $this->applyInputBindings($proxy->instance, $bindings);
+
+        // ⚡ Chiama onInit() DOPO aver applicato i bindings
+        $proxy->callOnInit();
 
         if ($slotContent !== null) {
             $this->injectSlotContent($proxy->instance, $slotContent);
@@ -383,7 +389,7 @@ class Renderer
         $form_action = function(string $name) use ($data) {
             $class = $data['__component_class'] ?? null;
             if (!$class) return '#';
-            
+
             $uri = $_SERVER['REQUEST_URI'] ?? '/';
             $path = parse_url($uri, PHP_URL_PATH) ?: '/';
             $base = Router::getInstance()->getBasePath();
@@ -442,7 +448,7 @@ class Renderer
 
         // Start output buffering
         ob_start();
-        
+
         try {
             include $templatePath;
             return ob_get_clean();

@@ -79,11 +79,20 @@ class ComponentProxy
             $injection['prop']->setValue($instance, $service);
         }
 
-        if ($cache['hasOnInit']) {
-            $instance->onInit();
-        }
+        // ⚠️ NON chiamare onInit() qui - sarà chiamato dal Renderer dopo applyInputBindings
+        // if ($cache['hasOnInit']) {
+        //     $instance->onInit();
+        // }
 
         return $instance;
+    }
+
+    public function callOnInit(): void
+    {
+        $className = get_class($this->instance);
+        if (method_exists($this->instance, 'onInit')) {
+            $this->instance->onInit();
+        }
     }
 
     public function __call(string $method, array $args): mixed
