@@ -386,6 +386,19 @@ class Renderer
             return $this->generateUrl($name, $params);
         };
 
+        $asset = function(string $path) {
+            $base = Router::getInstance()->getBasePath();
+            $fullPath = $path;
+            if (trim($base) !== '') {
+                $fullPath = $base . '/' . $path;
+            }
+            // Assicura che il percorso inizi con / per renderlo assoluto
+            if (!str_starts_with($fullPath, '/') && !str_starts_with($fullPath, 'http')) {
+                $fullPath = '/' . $fullPath;
+            }
+            return $fullPath;
+        };
+
         $form_action = function(string $name) use ($data) {
             $class = $data['__component_class'] ?? null;
             if (!$class) return '#';
