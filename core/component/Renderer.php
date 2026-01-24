@@ -30,6 +30,7 @@ class Renderer
     private array $componentScripts = [];
     private array $metaTags = [];
     private string $pageTitle = '';
+    private ?array $favicon = null;
     private string $language = 'en';
 
     private array $profilingData = [];
@@ -157,6 +158,7 @@ class Renderer
             $this->componentScripts = [];
             $this->metaTags = [];
             $this->pageTitle = '';
+            $this->favicon = null;
         }
 
         $proxy = new ComponentProxy($entry['class'], $entry['config']);
@@ -192,6 +194,18 @@ class Renderer
         $html .= '<head>' . "\n";
         $html .= '    <meta charset="UTF-8">' . "\n";
         $html .= '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' . "\n";
+
+        if ($this->favicon) {
+            $favicon = $this->favicon;
+            $html .= '    <link rel="icon" href="' . htmlspecialchars($favicon['href']) . '"';
+            if (!empty($favicon['type'])) {
+                $html .= ' type="' . htmlspecialchars($favicon['type']) . '"';
+            }
+            if (!empty($favicon['sizes'])) {
+                $html .= ' sizes="' . htmlspecialchars($favicon['sizes']) . '"';
+            }
+            $html .= '>' . "\n";
+        }
 
         if ($this->pageTitle) {
             $html .= '    <title>' . htmlspecialchars($this->pageTitle) . '</title>' . "\n";
@@ -264,6 +278,28 @@ class Renderer
         Profiler::end("renderComponent::{$selector}");
 
         return $html;
+    }
+
+    public function setFavicon(string $path, ?string $type = null, ?string $sizes = null): void
+    {
+        if (str_starts_with($path, 'http')) {
+            $resolved = $path;
+        } else {
+            $base = Router::getInstance()->getBasePath();
+            $resolved = ltrim($path, '/');
+            if (trim($base) !== '') {
+                $resolved = rtrim($base, '/') . '/' . $resolved;
+            }
+            if (!str_starts_with($resolved, '/') && !str_starts_with($resolved, 'http')) {
+                $resolved = '/' . $resolved;
+            }
+        }
+
+        $this->favicon = [
+            'href' => $resolved,
+            'type' => $type,
+            'sizes' => $sizes,
+        ];
     }
 
     private function injectSlotContent(object $component, string $slotContent): void
@@ -372,6 +408,10 @@ class Renderer
 
         $set_title = function(string $title) {
             $this->pageTitle = $title;
+        };
+
+        $set_favicon = function(string $path, ?string $type = null, ?string $sizes = null) {
+            $this->setFavicon($path, $type, $sizes);
         };
 
         $add_meta = function(string $name, string $content) {
