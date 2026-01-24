@@ -302,6 +302,11 @@ class Renderer
         ];
     }
 
+    public function setTitle(string $title): void
+    {
+        $this->pageTitle = $title;
+    }
+
     private function injectSlotContent(object $component, string $slotContent): void
     {
         $slots = $this->parseSlotContent($slotContent);
@@ -407,7 +412,7 @@ class Renderer
         };
 
         $set_title = function(string $title) {
-            $this->pageTitle = $title;
+            $this->setTitle($title);
         };
 
         $set_favicon = function(string $path, ?string $type = null, ?string $sizes = null) {
