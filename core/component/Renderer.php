@@ -31,6 +31,7 @@ class Renderer
     private array $metaTags = [];
     private string $pageTitle = '';
     private ?array $favicon = null;
+    private ?string $baseTag = null;
     private string $language = 'en';
 
     private array $profilingData = [];
@@ -195,6 +196,10 @@ class Renderer
         $html .= '    <meta charset="UTF-8">' . "\n";
         $html .= '    <meta name="viewport" content="width=device-width, initial-scale=1.0">' . "\n";
 
+        if ($this->baseTag !== null) {
+            $html .= '    <base href="' . htmlspecialchars($this->baseTag) . '">' . "\n";
+        }
+
         if ($this->favicon) {
             $favicon = $this->favicon;
             $html .= '    <link rel="icon" href="' . htmlspecialchars($favicon['href']) . '"';
@@ -305,6 +310,11 @@ class Renderer
     public function setTitle(string $title): void
     {
         $this->pageTitle = $title;
+    }
+
+    public function setBaseTag(string $href): void
+    {
+        $this->baseTag = $href;
     }
 
     private function injectSlotContent(object $component, string $slotContent): void

@@ -548,6 +548,9 @@ class Router
     {
         if (empty($basePath)) {
             $this->basePath = '';
+            if ($this->renderer) {
+                $this->renderer->setBaseTag('/');
+            }
             return;
         }
         if ($basePath[0] !== '/') {
@@ -557,6 +560,11 @@ class Router
             $basePath = rtrim($basePath, '/');
         }
         $this->basePath = $basePath;
+        
+        // Imposta il tag <base> nel Renderer
+        if ($this->renderer) {
+            $this->renderer->setBaseTag($basePath . '/');
+        }
     }
 
     public function getBasePath(): string
