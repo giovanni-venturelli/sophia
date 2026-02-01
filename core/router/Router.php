@@ -238,333 +238,199 @@ class Router
 
                         echo $this->renderer->renderRoot($selector, $data, $slotContent);
                         return $result;
-                    } else {
-                        $rendered = $this->renderer->renderComponent($selector, $data, $slotContent);
                     }
+
+                    $rendered = $this->renderer->renderComponent($selector, $data, $slotContent);
                 }
             }
-        }
 
-        // Priority 4: Fallback matching
-        $match = $this->matchRoute($uri);
-
-        if (!$match) {
-            $this->handleNotFound();
             return null;
         }
 
-        [$route, $params] = $match;
-        $this->currentRoute = $route;
-        $this->currentParams = $params;
-        $this->currentRouteData = $route['data'] ?? [];
+        // Priority 4: Single route match (legacy)
+        $matchedRoute = $this->matchRoute($uri);
+        if ($matchedRoute) {
+            [$route, $params] = $matchedRoute;
 
-        if (!empty($route['canActivate'])) {
-            if (!$this->executeGuards($route['canActivate'])) {
-                return null;
-            }
-        }
+            $this->currentRoute = $route;
+            $this->currentParams = $params;
+            $this->currentRouteData = $route['data'] ?? [];
 
-        if (isset($route['redirectTo'])) {
-            $target = $this->normalizePath($route['redirectTo']);
-            $url = $this->basePath . '/' . $target;
-
-            $result = [
-                'route' => $route,
-                'params' => $params,
-                'data' => $route['data'] ?? [],
-                'redirect' => $url,
-            ];
-
-            header('Location: ' . $url);
-            exit;
-        }
-
-        if (isset($route['callback']) && is_callable($route['callback'])) {
-            $result = [
-                'route' => $route,
-                'params' => $params,
-                'data' => $route['data'] ?? [],
-                'callback' => $route['callback'],
-            ];
-
-            call_user_func($route['callback'], $params, $route);
-            return $result;
-        }
-
-        if (isset($route['component'])) {
-            $componentClass = $route['component'];
-
-            if (!class_exists($componentClass)) {
-                http_response_code(500);
-                echo "Component '{$componentClass}' not found";
-                return null;
+            $guards = $route['canActivate'] ?? [];
+            if (!empty($guards)) {
+                if (!$this->executeGuards($guards)) {
+                    return null;
+                }
             }
 
-            if (!$this->renderer || !$this->componentRegistry) {
-                http_response_code(500);
-                echo "Renderer or ComponentRegistry not configured";
-                return null;
+            if (isset($route['redirectTo'])) {
+                $target = $this->normalizePath($route['redirectTo']);
+                $url = $this->basePath . '/' . $target;
+
+                $result = [
+                    'route' => $route,
+                    'params' => $params,
+                    'data' => $this->currentRouteData,
+                    'redirect' => $url,
+                ];
+
+                header('Location: ' . $url);
+                exit;
             }
 
-            $selector = $this->componentRegistry->lazyRegister($componentClass);
-            $data = array_merge($this->currentParams, [
-                'routeData' => $this->currentRouteData,
-            ]);
+            if (isset($route['callback']) && is_callable($route['callback'])) {
+                $result = [
+                    'route' => $route,
+                    'params' => $params,
+                    'data' => $this->currentRouteData,
+                    'callback' => $route['callback'],
+                ];
 
-            $result = [
-                'route' => $route,
-                'params' => $params,
-                'data' => $route['data'] ?? [],
-                'component' => $componentClass,
-            ];
+                call_user_func($route['callback'], $params, $route);
+                return $result;
+            }
 
-            echo $this->renderer->renderRoot($selector, $data);
-            return $result;
+            if ($this->renderer && $this->componentRegistry && isset($route['component'])) {
+                $componentClass = $route['component'];
+                if (!class_exists($componentClass)) {
+                    http_response_code(500);
+                    echo "Component '{$componentClass}' not found";
+                    return null;
+                }
+
+                $selector = $this->componentRegistry->lazyRegister($componentClass);
+                $data = array_merge($params, ['routeData' => $this->currentRouteData]);
+
+                $result = [
+                    'route' => $route,
+                    'params' => $params,
+                    'data' => $this->currentRouteData,
+                    'component' => $componentClass,
+                ];
+
+                echo $this->renderer->renderRoot($selector, $data);
+                return $result;
+            }
+
+            return null;
         }
 
         $this->handleNotFound();
         return null;
     }
 
-    /**
-     * ⚡ Pulisci cache (sviluppo)
-     */
-    public static function clearDispatchCache(): void
+    private function tryDispatchController(string $uri, string $method): bool
     {
-        self::$dispatchCache = [];
-    }
+        if (!$this->controllerRegistry) {
+            return false;
+        }
 
-    private function walkControllerRoutes(
-        array $routes,
-        string $uri,
-        string $method,
-        string $parentPath = '',
-        array $parentGuards = [],
-        array $parentData = []
-    ): bool {
-        foreach ($routes as $route) {
+        foreach ($this->routes as $route) {
+            if (!isset($route['controller'])) {
+                continue;
+            }
+
             $routePath = $this->normalizePath($route['path'] ?? '');
-            $fullPath = trim(
-                ($parentPath !== '' ? $parentPath . '/' : '') . $routePath,
-                '/'
+            $match = $this->matchPathWithParams($routePath, $uri, $route);
+
+            if (!$match) {
+                continue;
+            }
+
+            [$routeParams] = $match;
+
+            $controllerClass = $route['controller'];
+            $remainingPath = '';
+
+            if ($routePath !== '' && str_starts_with($uri, $routePath . '/')) {
+                $remainingPath = substr($uri, strlen($routePath) + 1);
+            } elseif ($routePath === $uri) {
+                $remainingPath = '';
+            }
+
+            $methodMatch = $this->controllerRegistry->matchControllerMethod(
+                $controllerClass,
+                $method,
+                $remainingPath
             );
 
-            $guards = array_merge($parentGuards, $route['canActivate'] ?? []);
-            $data   = array_merge($parentData, $route['data'] ?? []);
+            if ($methodMatch) {
+                $this->currentRoute = $route;
+                $this->currentParams = array_merge($routeParams, $methodMatch['params']);
+                $this->currentRouteData = $route['data'] ?? [];
 
-            // ⚡ CONTROLLER MATCH - con early exit
-            if (isset($route['controller'])) {
-                // ⚡ SKIP se path non matcha prefix
-                if ($fullPath !== '' && !str_starts_with($uri, $fullPath)) {
-                    goto check_children; // ⚡ Evita nesting pesante
+                $guards = $route['canActivate'] ?? [];
+                if (!empty($guards)) {
+                    if (!$this->executeGuards($guards)) {
+                        return true;
+                    }
                 }
 
-                $relativePath = $fullPath !== ''
-                    ? substr($uri, strlen($fullPath))
-                    : $uri;
-
-                $relativePath = ltrim($relativePath, '/');
-
-                if (!$this->controllerRegistry) {
-                    $this->controllerRegistry = new ControllerRegistry();
-                }
-
-                $match = $this->controllerRegistry->matchControllerMethod(
-                    $route['controller'],
-                    $method,
-                    $relativePath
+                $result = $this->controllerRegistry->invokeControllerMethod(
+                    $controllerClass,
+                    $methodMatch['methodName'],
+                    $this->currentParams
                 );
 
-                if ($match) {
-                    if (!empty($guards)) {
-                        if (!$this->executeGuards($guards)) {
-                            return true; // ⚡ Guard blocked, ma match trovato
-                        }
-                    }
-
-                    $this->currentRoute = $route;
-                    $this->currentParams = $match['params'];
-                    $this->currentRouteData = $data;
-
-                    $result = $this->controllerRegistry->invokeControllerMethod(
-                        $route['controller'],
-                        $match['methodName'],
-                        $match['params']
-                    );
-
-                    $this->handleControllerResponse($result);
-                    return true; // ⚡ FOUND! Exit immediatamente
+                if (is_string($result)) {
+                    echo $result;
+                } elseif (is_array($result) || is_object($result)) {
+                    header('Content-Type: application/json');
+                    echo json_encode($result);
                 }
-            }
 
-            check_children:
-
-            // ⚡ CHILDREN - solo se necessario
-            if (!empty($route['children'])) {
-                if ($this->walkControllerRoutes(
-                    $route['children'],
-                    $uri,
-                    $method,
-                    $fullPath,
-                    $guards,
-                    $data
-                )) {
-                    return true; // ⚡ Found in children, exit
-                }
-            }
-
-            // ⚡ IMPORTS - solo se necessario
-            if (!empty($route['imports'])) {
-                foreach ($route['imports'] as $import) {
-                    if (!empty($import['children'])) {
-                        if ($this->walkControllerRoutes(
-                            $import['children'],
-                            $uri,
-                            $method,
-                            $fullPath,
-                            $guards,
-                            $data
-                        )) {
-                            return true; // ⚡ Found in imports, exit
-                        }
-                    }
-                }
+                return true;
             }
         }
 
         return false;
     }
 
-    /**
-     * 🔥 NUOVO: Prova a dispatchare una route con controller
-     */
-    private function tryDispatchController(string $uri, string $method): bool
-    {
-        // ⚡ SKIP IMMEDIATO se non ci sono controller
-        $hasControllers = false;
-        foreach ($this->routes as $route) {
-            if (isset($route['controller'])) {
-                $hasControllers = true;
-                break;
-            }
-        }
-
-        if (!$hasControllers) {
-            return false; // ⚡ Risparmio: non scansionare se non necessario
-        }
-
-        return $this->walkControllerRoutes(
-            $this->routes,
-            $uri,
-            strtoupper($method)
-        );
-    }
-
-
-
-    /**
-     * 🔥 NUOVO: Gestisce la risposta di un controller
-     */
-    private function handleControllerResponse(mixed $result): void
-    {
-        if ($result === null) {
-            return;
-        }
-
-        // Se è già una stringa, output diretto
-        if (is_string($result)) {
-            echo $result;
-            return;
-        }
-
-        // Se è un array o oggetto, serializza come JSON
-        if (is_array($result) || is_object($result)) {
-            header('Content-Type: application/json');
-            echo json_encode($result);
-            return;
-        }
-
-        // Altri tipi: converti a stringa
-        echo (string)$result;
-    }
-
-    /**
-     * 🔥 Esegue i guards della route
-     */
     private function executeGuards(array $guards): bool
     {
-        foreach ($guards as $guardClass) {
-            if (is_string($guardClass)) {
-                if (!class_exists($guardClass)) {
-                    throw new \RuntimeException("Guard class '{$guardClass}' not found");
+        foreach ($guards as $guard) {
+            if (is_string($guard) && class_exists($guard)) {
+                $guardInstance = new $guard();
+                if ($guardInstance instanceof MiddlewareInterface) {
+                    if (!$guardInstance->handle()) {
+                        http_response_code(403);
+                        echo '403 - Forbidden';
+                        return false;
+                    }
                 }
-
-                $guard = new $guardClass();
-
-                if (!$guard instanceof MiddlewareInterface) {
-                    throw new \RuntimeException(
-                        "Guard '{$guardClass}' must implement " . MiddlewareInterface::class
-                    );
+            } elseif (is_callable($guard)) {
+                if (!call_user_func($guard)) {
+                    http_response_code(403);
+                    echo '403 - Forbidden';
+                    return false;
                 }
-            } elseif ($guardClass instanceof MiddlewareInterface) {
-                $guard = $guardClass;
-            } else {
-                throw new \RuntimeException("Invalid guard type");
-            }
-
-            if (!$guard->handle()) {
-                return false;
             }
         }
-
         return true;
     }
 
-    public function configure(array $routes): void
+    public function addRoutes(array $routes, ?string $prefix = null): void
     {
-        $this->routes = $routes;
+        if ($prefix !== null) {
+            $routes = $this->prefixRoutes($routes, $prefix);
+        }
+
+        $this->routes = array_merge($this->routes, $routes);
     }
 
-    public function get(string $path, string $component, array $options = []): void
+    private function prefixRoutes(array $routes, string $prefix): array
     {
-        $this->addRoute('GET', $path, $component, $options);
-    }
-
-    public function post(string $path, string $component, array $options = []): void
-    {
-        $this->addRoute('POST', $path, $component, $options);
-    }
-
-    private function addRoute(string $method, string $path, string $component, array $options = []): void
-    {
-        $this->routes[] = array_merge($options, [
-            'path' => $path,
-            'component' => $component,
-            'method' => $method
-        ]);
+        return array_map(function ($route) use ($prefix) {
+            if (isset($route['path'])) {
+                $route['path'] = trim($prefix, '/') . '/' . trim($route['path'], '/');
+            }
+            return $route;
+        }, $routes);
     }
 
     public function setBasePath(string $basePath): void
     {
-        if (empty($basePath)) {
-            $this->basePath = '';
-            if ($this->renderer) {
-                $this->renderer->setBaseTag('/');
-            }
-            return;
-        }
-        if ($basePath[0] !== '/') {
-            $basePath = '/' . $basePath;
-        }
-        if (strlen($basePath) > 1) {
-            $basePath = rtrim($basePath, '/');
-        }
-        $this->basePath = $basePath;
-        
-        // Imposta il tag <base> nel Renderer
-        if ($this->renderer) {
-            $this->renderer->setBaseTag($basePath . '/');
-        }
+        $this->basePath = '/' . trim($basePath, '/');
     }
 
     public function getBasePath(): string
@@ -600,10 +466,18 @@ class Router
         return $this->currentParams;
     }
 
-    public function url(string $name, array $params = []): string
+    /**
+     * 🔥 FIX: Genera URL gestendo parametri mancanti in modo più intelligente
+     *
+     * @param string $name Nome della route
+     * @param array $params Parametri per l'URL
+     * @param bool $strict Se true, lancia eccezione per parametri mancanti. Se false, ritorna '#'
+     * @return string
+     */
+    public function url(string $name, array $params = [], bool $strict = false): string
     {
         // ⚡ Cache del risultato finale
-        $cacheKey = $name . ':' . json_encode($params);
+        $cacheKey = $name . ':' . json_encode($params) . ':' . ($strict ? '1' : '0');
         if (isset(self::$urlCache[$cacheKey])) {
             return self::$urlCache[$cacheKey];
         }
@@ -612,7 +486,9 @@ class Router
         if (!isset(self::$routeCache[$name])) {
             $result = $this->findRouteAndFullPath($name);
             if (!$result) {
-                return '#';
+                $finalUrl = '#';
+                self::$urlCache[$cacheKey] = $finalUrl;
+                return $finalUrl;
             }
             self::$routeCache[$name] = $result;
         }
@@ -629,11 +505,23 @@ class Router
 
         if ($path !== '') {
             $segments = explode('/', $path);
+            $hasRequiredParams = false;
+
             foreach ($segments as $i => $segment) {
                 if (str_starts_with($segment, ':')) {
                     $paramName = substr($segment, 1);
+                    $hasRequiredParams = true;
+
                     if (!array_key_exists($paramName, $params)) {
-                        throw new \InvalidArgumentException("Missing param '{$paramName}' for '{$name}'");
+                        // 🔥 FIX: Gestisce parametri mancanti
+                        if ($strict) {
+                            throw new \InvalidArgumentException("Missing param '{$paramName}' for '{$name}'");
+                        } else {
+                            // Ritorna '#' invece di generare un URL non valido
+                            $finalUrl = '#';
+                            self::$urlCache[$cacheKey] = $finalUrl;
+                            return $finalUrl;
+                        }
                     }
                     $segments[$i] = $params[$paramName];
                 }
@@ -650,6 +538,54 @@ class Router
     }
 
     /**
+     * 🔥 NUOVO: Verifica se una route con nome richiede parametri
+     */
+    public function routeRequiresParams(string $name): bool
+    {
+        if (!isset(self::$routeCache[$name])) {
+            $result = $this->findRouteAndFullPath($name);
+            if (!$result) {
+                return false;
+            }
+            self::$routeCache[$name] = $result;
+        }
+
+        $result = self::$routeCache[$name];
+        $path = $result['fullPath'];
+
+        return str_contains($path, ':');
+    }
+
+    /**
+     * 🔥 NUOVO: Ottiene i parametri richiesti da una route
+     */
+    public function getRouteRequiredParams(string $name): array
+    {
+        if (!isset(self::$routeCache[$name])) {
+            $result = $this->findRouteAndFullPath($name);
+            if (!$result) {
+                return [];
+            }
+            self::$routeCache[$name] = $result;
+        }
+
+        $result = self::$routeCache[$name];
+        $path = $result['fullPath'];
+
+        $params = [];
+        if ($path !== '') {
+            $segments = explode('/', $path);
+            foreach ($segments as $segment) {
+                if (str_starts_with($segment, ':')) {
+                    $params[] = substr($segment, 1);
+                }
+            }
+        }
+
+        return $params;
+    }
+
+    /**
      * ⚡ NUOVO: Pulisce la cache (per sviluppo)
      */
     public static function clearUrlCache(): void
@@ -658,7 +594,7 @@ class Router
         self::$urlCache = [];
     }
 
-    private function findRouteAndFullPath(string $name, array $routes = null, string $parentPath = ''): ?array
+    private function findRouteAndFullPath(string $name, ?array $routes = null, string $parentPath = ''): ?array
     {
         $routes = $routes ?? $this->routes;
         foreach ($routes as $route) {
