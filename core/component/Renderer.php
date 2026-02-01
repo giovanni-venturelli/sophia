@@ -432,15 +432,21 @@ class Renderer
         };
 
         $asset = function(string $path) {
+            // Se il percorso è già assoluto (inizia con / o http), restituiscilo così com'è
+            if (str_starts_with($path, '/') || str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+                return $path;
+            }
+            
+            // Ottieni il basePath (es. se il sito è in una sottocartella)
             $base = Router::getInstance()->getBasePath();
-            $fullPath = $path;
-            if (trim($base) !== '') {
-                $fullPath = $base . '/' . $path;
+            
+            // Costruisci il percorso assoluto: basePath + path
+            if (trim($base) !== '' && $base !== '/') {
+                $fullPath = $base . '/' . ltrim($path, '/');
+            } else {
+                $fullPath = '/' . ltrim($path, '/');
             }
-            // Assicura che il percorso inizi con / per renderlo assoluto
-            if (!str_starts_with($fullPath, '/') && !str_starts_with($fullPath, 'http')) {
-                $fullPath = '/' . $fullPath;
-            }
+            
             return $fullPath;
         };
 
