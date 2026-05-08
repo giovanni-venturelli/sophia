@@ -38,6 +38,13 @@ class Router
     private static array $routeCache = [];
     private static array $urlCache = [];
 
+    public function loadFromCache(string $cacheFile): void
+    {
+        if (file_exists($cacheFile)) {
+            $this->routes = require $cacheFile;
+        }
+    }
+
     /**
      * Singleton
      */

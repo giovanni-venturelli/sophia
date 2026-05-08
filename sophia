@@ -1,0 +1,101 @@
+#!/usr/bin/env php
+<?php
+
+// Find the autoloader
+$autoloader = null;
+$searchPaths = [
+    __DIR__ . '/vendor/autoload.php',           // Local development
+    __DIR__ . '/../../autoload.php',            // Installed as a composer package (vendor/giovanni-venturelli/sophia)
+    getcwd() . '/vendor/autoload.php'           // Executed from project root
+];
+
+foreach ($searchPaths as $path) {
+    if (file_exists($path)) {
+        $autoloader = $path;
+        break;
+    }
+}
+
+if (!$autoloader) {
+    fwrite(STDERR, "Error: Could not find vendor/autoload.php. Please run 'composer install'.\n");
+    exit(1);
+}
+
+require $autoloader;
+
+// Determine project root directory
+// If we are in vendor, the project root is usually where the 'vendor' folder is
+$projectRoot = getcwd();
+if (strpos(__DIR__, 'vendor') !== false) {
+    // If the script itself is inside a vendor folder, try to find the project root
+    $projectRoot = realpath(__DIR__ . '/../../../');
+}
+
+// Check for custom configuration in composer.json of the project
+$config = [];
+if (file_exists($projectRoot . '/composer.json')) {
+    $composerData = json_decode(file_get_contents($projectRoot . '/composer.json'), true);
+    $config = $composerData['extra']['sophia'] ?? [];
+}
+
+use Sophia\Core\BuildService;
+
+echo "Sophia Build Tool\n";
+echo "=================\n";
+echo "Project Root: $projectRoot\n\n";
+
+$command = $argv[1] ?? 'help';
+
+switch ($command) {
+    case 'build':
+        echo "Starting build process...\n";
+        $start = microtime(true);
+        
+        $buildService = new BuildService($projectRoot);
+        
+        // Prepare options from composer.json
+        $options = [];
+        if (isset($config['components_dirs'])) {
+            $options['components_dirs'] = array_map(function($dir) use ($projectRoot) {
+                return $projectRoot . DIRECTORY_SEPARATOR . ltrim($dir, '/\\');
+            }, (array)$config['components_dirs']);
+        }
+        if (isset($config['routes_path'])) {
+            $options['routes_path'] = $projectRoot . DIRECTORY_SEPARATOR . ltrim($config['routes_path'], '/\\');
+        }
+        if (isset($config['services_dirs'])) {
+            $options['services_dirs'] = array_map(function($dir) use ($projectRoot) {
+                return $projectRoot . DIRECTORY_SEPARATOR . ltrim($dir, '/\\');
+            }, (array)$config['services_dirs']);
+        }
+
+        $results = $buildService->build($options);
+        
+        $duration = microtime(true) - $start;
+        
+        echo "Build completed in " . round($duration, 4) . "s\n";
+        echo "- Components mapped: " . $results['components'] . "\n";
+        echo "- Routes compiled: " . $results['routes'] . "\n";
+        echo "- DI Services mapped: " . $results['di'] . "\n";
+        echo "\nSuccess! Cached files are in cache/build/\n";
+        break;
+        
+    case 'clear':
+        echo "Clearing cache...\n";
+        $cacheDir = $projectRoot . '/cache/build';
+        if (is_dir($cacheDir)) {
+            $files = glob($cacheDir . '/*.php');
+            foreach ($files as $file) {
+                unlink($file);
+            }
+            echo "Build cache cleared.\n";
+        }
+        break;
+
+    case 'help':
+    default:
+        echo "Usage:\n";
+        echo "  php sophia build    - Pre-compiles components, routes and DI\n";
+        echo "  php sophia clear    - Clears the build cache\n";
+        break;
+}

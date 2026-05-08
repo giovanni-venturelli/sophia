@@ -37,6 +37,16 @@ $dbService->configure($dbConfig);
 $registry = ComponentRegistry::getInstance();
 $templatesPath = __DIR__ . '/pages';
 
+// ⚡ PERFORMANCE: Load pre-compiled build artifacts
+$buildCacheDir = __DIR__ . '/cache/build';
+$isProduction = !($_ENV['DEBUG'] ?? false);
+
+if ($isProduction && file_exists($buildCacheDir . '/manifest.php')) {
+    $registry->loadFromCache($buildCacheDir . '/components_map.php');
+} else {
+    $registry->boot(__DIR__ . '/Shared');
+}
+
 // ⚡ PERFORMANCE: Use realpath cache
 $cachePath = realpath(__DIR__ . '/cache/twig') ?: __DIR__ . '/cache/twig';
 
@@ -48,7 +58,7 @@ public function onInit(): void
 }
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
-$registry->boot(__DIR__ . '/Shared');
+
 // ⚡ PERFORMANCE: Disable cache in debug, enable in production
 $isDebug = $_ENV['DEBUG'] ?? false;
 $renderer->configure($templatesPath, $isDebug ? '' : $cachePath, 'it', $isDebug);
@@ -63,7 +73,11 @@ $router->setControllerRegistry(new ControllerRegistry());
 $router->setRenderer($renderer);
 $router->setBasePath($basePath);
 
-require __DIR__ . '/routes.php';
+if ($isProduction && file_exists($buildCacheDir . '/routes_compiled.php')) {
+    $router->loadFromCache($buildCacheDir . '/routes_compiled.php');
+} else {
+    require __DIR__ . '/routes.php';
+}
 
 try {
     // ⚡ PERFORMANCE: Measure routing
