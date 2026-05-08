@@ -14,7 +14,15 @@ use Throwable;
 class ComponentRegistry {
     private static ?self $instance = null;
     private array $components = [];
-    private static array $reflectionCache = [];  // ← PERFORMANCE CACHE!
+    private static array $reflectionCache = [];
+
+    public function loadFromCache(string $cacheFile): void
+    {
+        if (file_exists($cacheFile)) {
+            $this->components = require $cacheFile;
+        }
+    }
+
     public static function boot(string $componentsDir): void
     {
         Profiler::start('registry.boot');
@@ -24,7 +32,7 @@ class ComponentRegistry {
         $classes = [];
         foreach ($files as $file) {
             if ($file->getExtension() === 'php') {
-                $namespace = 'App\\Components'; // adatta al tuo namespace
+                $namespace = 'App\\Components'; // adapt to your namespace
                 $className = $namespace . '\\' . str_replace(
                         [$componentsDir . DIRECTORY_SEPARATOR, '.php'],
                         ['', ''],
@@ -42,7 +50,7 @@ class ComponentRegistry {
             try {
                 $instance->registerRecursive($class, []);
             } catch (Throwable $e) {
-                // Logga ma continua
+                // Log but continue
                 error_log("Failed to register $class: " . $e->getMessage());
             }
         }
@@ -51,7 +59,7 @@ class ComponentRegistry {
     }
 
     /**
-     * Versione veloce: registra solo classi esplicite
+     * Fast version: registers only explicit classes
      */
     public static function preload(array $classList): void
     {
@@ -84,7 +92,7 @@ class ComponentRegistry {
             'class' => $className,
             'template' => $config->template,
             'styles' => $config->styles,     // ← Array
-            'scripts' => $config->scripts,   // ← Array NUOVO
+            'scripts' => $config->scripts,   // ← Array NEW
             'providers' => $config->providers,
             'imports' => $config->imports
         ];
@@ -129,13 +137,13 @@ class ComponentRegistry {
         $this->registerClass($class, $options);
         Profiler::end('registerRecursive::registerClass');
 
-        // Auto-registra imports RICORSIVAMENTE
+        // Auto-registers imports RECURSIVELY
         Profiler::start('registerRecursive::getImports');
         $imports = $this->getImportsFromComponentAttribute($class);
         Profiler::end('registerRecursive::getImports');
 
         foreach ($imports as $importClass) {
-            $this->registerRecursive($importClass, $options); // ⚡ Potenzialmente lento!
+            $this->registerRecursive($importClass, $options); // ⚡ Potentially slow!
         }
     }
 
@@ -238,12 +246,12 @@ class ComponentRegistry {
      * Check if a class or selector is registered
      */
     public function isRegistered(string $classOrSelector): bool {
-        // Cerca per selector
+        // Search by selector
         if (isset($this->components[$classOrSelector])) {
             return true;
         }
 
-        // Cerca per classe
+        // Search by class
         foreach ($this->components as $data) {
             if ($data['class'] === $classOrSelector) {
                 return true;

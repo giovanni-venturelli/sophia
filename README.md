@@ -20,6 +20,7 @@ Quick navigation
 - [Create your first component](#create-your-first-component)
 - [Dependency Injection (services)](#dependency-injection-services)
 - [Routing basics (components, params, urls)](#routing-basics-components-params-urls)
+- [Performance & Build System](#performance--build-system)
 - [Database integration (optional)](#database-integration-optional)
 - [Troubleshooting](#troubleshooting)
 - [Deep dives (module READMEs)](#deep-dives-module-readmes)
@@ -212,6 +213,34 @@ Template helpers:
 ```
 More details: [Router](core/router/README.md).
 
+
+### Redirections and Guards
+(Existing content for Routing basics...)
+
+Performance & Build System
+--------------------------
+Sophia includes a build system to optimize performance in production (up to 40% faster).
+
+### How it works
+In development mode (`DEBUG=true`), the framework scans folders and uses the Reflection API on every request. In production (`DEBUG=false`), the framework loads pre-generated static maps.
+
+### CLI Commands
+From the project root:
+```bash
+# Generate structural cache (components, routes, DI)
+php sophia build
+
+# Clear the build cache
+php sophia clear
+```
+
+### When to run the build?
+The build is only necessary when the **structure** of the application changes:
+- Creating new components or services.
+- Modifying routes or selectors.
+- Modifying `providers` in Dependency Injection.
+
+**Note:** It is not necessary to rebuild if you only modify the database content, the logic code inside a method, or the HTML markup of an existing template.
 
 Database integration (optional)
 -------------------------------

@@ -1,0 +1,48 @@
+#!/usr/bin/env php
+<?php
+
+require __DIR__ . '/vendor/autoload.php';
+
+use Sophia\Core\BuildService;
+
+echo "Sophia Build Tool\n";
+echo "=================\n";
+
+$command = $argv[1] ?? 'help';
+
+switch ($command) {
+    case 'build':
+        echo "Starting build process...\n";
+        $start = microtime(true);
+        
+        $buildService = new BuildService(__DIR__);
+        $results = $buildService->build();
+        
+        $duration = microtime(true) - $start;
+        
+        echo "Build completed in " . round($duration, 4) . "s\n";
+        echo "- Components mapped: " . $results['components'] . "\n";
+        echo "- Routes compiled: " . $results['routes'] . "\n";
+        echo "- DI Services mapped: " . $results['di'] . "\n";
+        echo "\nSuccess! Cached files are in cache/build/\n";
+        break;
+        
+    case 'clear':
+        echo "Clearing cache...\n";
+        $cacheDir = __DIR__ . '/cache/build';
+        if (is_dir($cacheDir)) {
+            $files = glob($cacheDir . '/*.php');
+            foreach ($files as $file) {
+                unlink($file);
+            }
+            echo "Build cache cleared.\n";
+        }
+        break;
+
+    case 'help':
+    default:
+        echo "Usage:\n";
+        echo "  php sophia build    - Pre-compiles components, routes and DI\n";
+        echo "  php sophia clear    - Clears the build cache\n";
+        break;
+}

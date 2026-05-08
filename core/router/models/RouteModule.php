@@ -2,7 +2,7 @@
 namespace Sophia\Router\Models;
 
 /**
- * Modulo di route (come in Angular)
+ * Route module (similar to Angular)
  */
 final class RouteModule
 {
@@ -20,7 +20,7 @@ final class RouteModule
     }
 
     /**
-     * Ottiene il nome del modulo
+     * Gets the module name
      *
      * @return string
      */
@@ -30,7 +30,7 @@ final class RouteModule
     }
 
     /**
-     * Ottiene il prefisso del modulo
+     * Gets the module prefix
      *
      * @return string
      */
@@ -40,7 +40,7 @@ final class RouteModule
     }
 
     /**
-     * Ottiene i middleware del modulo
+     * Gets the module middleware
      *
      * @return array
      */
@@ -50,7 +50,7 @@ final class RouteModule
     }
 
     /**
-     * Ottiene le routes del modulo
+     * Gets the module routes
      *
      * @return array
      */
@@ -60,9 +60,9 @@ final class RouteModule
     }
 
     /**
-     * Aggiunge una route al modulo
+     * Adds a route to the module
      *
-     * @param array $route Configurazione della route
+     * @param array $route Route configuration
      * @return self
      */
     public function addRoute(array $route): self
