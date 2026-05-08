@@ -31,6 +31,13 @@ if (strpos(__DIR__, 'vendor') !== false) {
     $projectRoot = realpath(__DIR__ . '/../../../');
 }
 
+// Check for custom configuration in composer.json of the project
+$config = [];
+if (file_exists($projectRoot . '/composer.json')) {
+    $composerData = json_decode(file_get_contents($projectRoot . '/composer.json'), true);
+    $config = $composerData['extra']['sophia'] ?? [];
+}
+
 use Sophia\Core\BuildService;
 
 echo "Sophia Build Tool\n";
@@ -45,7 +52,24 @@ switch ($command) {
         $start = microtime(true);
         
         $buildService = new BuildService($projectRoot);
-        $results = $buildService->build();
+        
+        // Prepare options from composer.json
+        $options = [];
+        if (isset($config['components_dirs'])) {
+            $options['components_dirs'] = array_map(function($dir) use ($projectRoot) {
+                return $projectRoot . DIRECTORY_SEPARATOR . ltrim($dir, '/\\');
+            }, (array)$config['components_dirs']);
+        }
+        if (isset($config['routes_path'])) {
+            $options['routes_path'] = $projectRoot . DIRECTORY_SEPARATOR . ltrim($config['routes_path'], '/\\');
+        }
+        if (isset($config['services_dirs'])) {
+            $options['services_dirs'] = array_map(function($dir) use ($projectRoot) {
+                return $projectRoot . DIRECTORY_SEPARATOR . ltrim($dir, '/\\');
+            }, (array)$config['services_dirs']);
+        }
+
+        $results = $buildService->build($options);
         
         $duration = microtime(true) - $start;
         

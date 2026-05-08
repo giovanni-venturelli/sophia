@@ -28,12 +28,12 @@ class BuildService
     /**
      * Executes the complete build process
      */
-    public function build(): array
+    public function build(array $options = []): array
     {
         $results = [];
-        $results['components'] = $this->buildComponentMap();
-        $results['routes'] = $this->buildRouteCache();
-        $results['di'] = $this->buildDIMap();
+        $results['components'] = $this->buildComponentMap($options['components_dirs'] ?? null);
+        $results['routes'] = $this->buildRouteCache($options['routes_path'] ?? null);
+        $results['di'] = $this->buildDIMap($options['services_dirs'] ?? null);
         
         $this->generateBuildManifest($results);
         
@@ -43,13 +43,16 @@ class BuildService
     /**
      * Maps all components to avoid directory scanning and reflection at runtime
      */
-    private function buildComponentMap(): int
+    private function buildComponentMap(?array $dirs = null): int
     {
-        $registry = ComponentRegistry::getInstance();
-        $componentsDir = $this->rootDir . DIRECTORY_SEPARATOR . 'Shared';
-        $pagesDir = $this->rootDir . DIRECTORY_SEPARATOR . 'pages';
+        if ($dirs === null) {
+            $dirs = [
+                $this->rootDir . DIRECTORY_SEPARATOR . 'Shared',
+                $this->rootDir . DIRECTORY_SEPARATOR . 'pages'
+            ];
+        }
         
-        $classes = $this->scanForClasses([$componentsDir, $pagesDir]);
+        $classes = $this->scanForClasses($dirs);
         $map = [];
 
         foreach ($classes as $class) {
@@ -81,7 +84,7 @@ class BuildService
     /**
      * Pre-compiles routes (including external files) into a single array
      */
-    private function buildRouteCache(): int
+    private function buildRouteCache(?string $routesPath = null): int
     {
         // Note: This requires routes to be definable statically
         // If routes.php uses external variables, it might be complex.
@@ -89,7 +92,10 @@ class BuildService
         
         $router = Router::getInstance();
         // Load original routes (this might vary depending on how the user defines them)
-        $routesPath = $this->rootDir . DIRECTORY_SEPARATOR . 'routes.php';
+        if ($routesPath === null) {
+            $routesPath = $this->rootDir . DIRECTORY_SEPARATOR . 'routes.php';
+        }
+        
         if (file_exists($routesPath)) {
             // We isolate the inclusion to not pollute the state
             (static function($router, $path) {
@@ -109,19 +115,17 @@ class BuildService
     /**
      * Maps root-provided Injectable services
      */
-    private function buildDIMap(): int
+    private function buildDIMap(?array $dirs = null): int
     {
-        $coreDir = $this->rootDir . DIRECTORY_SEPARATOR . 'core';
-        $servicesDir = $this->rootDir . DIRECTORY_SEPARATOR . 'services';
-        
-        // If we are installed as a vendor package, the 'core' folder might be in vendor/giovanni-venturelli/sophia/core
-        // But the user services are in $this->rootDir/services
-        $dirs = [$servicesDir];
-        
-        // Try to find Sophia core classes
-        $sophiaCore = __DIR__; // This is current core dir
-        if (is_dir($sophiaCore)) {
-            $dirs[] = $sophiaCore;
+        if ($dirs === null) {
+            $servicesDir = $this->rootDir . DIRECTORY_SEPARATOR . 'services';
+            $dirs = [$servicesDir];
+            
+            // Try to find Sophia core classes
+            $sophiaCore = __DIR__; // This is current core dir
+            if (is_dir($sophiaCore)) {
+                $dirs[] = $sophiaCore;
+            }
         }
 
         $classes = $this->scanForClasses($dirs);
@@ -151,14 +155,34 @@ class BuildService
         foreach ($dirs as $dir) {
             if (!is_dir($dir)) continue;
             
-            $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
+            $files = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS)
+            );
             foreach ($files as $file) {
                 if ($file->getExtension() === 'php') {
                     $content = file_get_contents($file->getPathname());
-                    if (preg_match('/namespace\s+(.+?);/i', $content, $m)) {
-                        $namespace = $m[1];
-                        if (preg_match('/(?:class|trait|interface)\s+(\w+)/i', $content, $m2)) {
-                            $classes[] = $namespace . '\\' . $m2[1];
+                    $namespace = '';
+                    if (preg_match('/namespace\s+([^;]+);/i', $content, $m)) {
+                        $namespace = trim($m[1]);
+                    }
+                    
+                    if (preg_match('/(?:class|trait|interface)\s+(\w+)/i', $content, $m2)) {
+                        $className = $m2[1];
+                        $fullClassName = $namespace ? $namespace . '\\' . $className : $className;
+                        
+                        // Try to trigger autoloader if not already loaded
+                        if (!class_exists($fullClassName, true)) {
+                            // If it still doesn't exist, we might need to require it manually
+                            // because scanForClasses is used to find classes to be cached
+                            try {
+                                @include_once $file->getPathname();
+                            } catch (\Throwable) {
+                                // Ignore include errors
+                            }
+                        }
+                        
+                        if (class_exists($fullClassName, false) || class_exists($fullClassName, true)) {
+                            $classes[] = $fullClassName;
                         }
                     }
                 }
