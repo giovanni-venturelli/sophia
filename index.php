@@ -41,6 +41,11 @@ $templatesPath = __DIR__ . '/pages';
 $cachePath = realpath(__DIR__ . '/cache/twig') ?: __DIR__ . '/cache/twig';
 
 /** @var Renderer $renderer */
+
+public function onInit(): void
+{
+    $this->appService->addItems(['item1', 'item2', 'item3']);
+}
 $renderer = Injector::inject(Renderer::class);
 $renderer->setRegistry($registry);
 $registry->boot(__DIR__ . '/Shared');
