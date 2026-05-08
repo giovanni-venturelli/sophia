@@ -1,12 +1,41 @@
 #!/usr/bin/env php
 <?php
 
-require __DIR__ . '/vendor/autoload.php';
+// Find the autoloader
+$autoloader = null;
+$searchPaths = [
+    __DIR__ . '/vendor/autoload.php',           // Local development
+    __DIR__ . '/../../autoload.php',            // Installed as a composer package (vendor/giovanni-venturelli/sophia)
+    getcwd() . '/vendor/autoload.php'           // Executed from project root
+];
+
+foreach ($searchPaths as $path) {
+    if (file_exists($path)) {
+        $autoloader = $path;
+        break;
+    }
+}
+
+if (!$autoloader) {
+    fwrite(STDERR, "Error: Could not find vendor/autoload.php. Please run 'composer install'.\n");
+    exit(1);
+}
+
+require $autoloader;
+
+// Determine project root directory
+// If we are in vendor, the project root is usually where the 'vendor' folder is
+$projectRoot = getcwd();
+if (strpos(__DIR__, 'vendor') !== false) {
+    // If the script itself is inside a vendor folder, try to find the project root
+    $projectRoot = realpath(__DIR__ . '/../../../');
+}
 
 use Sophia\Core\BuildService;
 
 echo "Sophia Build Tool\n";
 echo "=================\n";
+echo "Project Root: $projectRoot\n\n";
 
 $command = $argv[1] ?? 'help';
 
@@ -15,7 +44,7 @@ switch ($command) {
         echo "Starting build process...\n";
         $start = microtime(true);
         
-        $buildService = new BuildService(__DIR__);
+        $buildService = new BuildService($projectRoot);
         $results = $buildService->build();
         
         $duration = microtime(true) - $start;
@@ -29,7 +58,7 @@ switch ($command) {
         
     case 'clear':
         echo "Clearing cache...\n";
-        $cacheDir = __DIR__ . '/cache/build';
+        $cacheDir = $projectRoot . '/cache/build';
         if (is_dir($cacheDir)) {
             $files = glob($cacheDir . '/*.php');
             foreach ($files as $file) {

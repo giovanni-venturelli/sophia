@@ -114,7 +114,17 @@ class BuildService
         $coreDir = $this->rootDir . DIRECTORY_SEPARATOR . 'core';
         $servicesDir = $this->rootDir . DIRECTORY_SEPARATOR . 'services';
         
-        $classes = $this->scanForClasses([$coreDir, $servicesDir]);
+        // If we are installed as a vendor package, the 'core' folder might be in vendor/giovanni-venturelli/sophia/core
+        // But the user services are in $this->rootDir/services
+        $dirs = [$servicesDir];
+        
+        // Try to find Sophia core classes
+        $sophiaCore = __DIR__; // This is current core dir
+        if (is_dir($sophiaCore)) {
+            $dirs[] = $sophiaCore;
+        }
+
+        $classes = $this->scanForClasses($dirs);
         $rootServices = [];
 
         foreach ($classes as $class) {
