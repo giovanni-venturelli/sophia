@@ -19,7 +19,7 @@ class BuildService
     {
         $this->rootDir = rtrim($rootDir, '/\\');
         $this->cacheDir = $this->rootDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR . 'build';
-        
+
         if (!is_dir($this->cacheDir)) {
             mkdir($this->cacheDir, 0777, true);
         }
@@ -34,9 +34,9 @@ class BuildService
         $results['components'] = $this->buildComponentMap($options['components_dirs'] ?? null);
         $results['routes'] = $this->buildRouteCache($options['routes_path'] ?? null);
         $results['di'] = $this->buildDIMap($options['services_dirs'] ?? null);
-        
+
         $this->generateBuildManifest($results);
-        
+
         return $results;
     }
 
@@ -47,11 +47,11 @@ class BuildService
     {
         if ($dirs === null) {
             $dirs = [
-                $this->rootDir . DIRECTORY_SEPARATOR . 'Shared',
+                $this->rootDir . DIRECTORY_SEPARATOR . 'shared',
                 $this->rootDir . DIRECTORY_SEPARATOR . 'pages'
             ];
         }
-        
+
         $classes = $this->scanForClasses($dirs);
         $map = [];
 
@@ -59,7 +59,7 @@ class BuildService
             try {
                 $reflection = new ReflectionClass($class);
                 $attr = $reflection->getAttributes(Component::class)[0] ?? null;
-                
+
                 if ($attr) {
                     $config = $attr->newInstance();
                     $map[$config->selector] = [
@@ -89,13 +89,13 @@ class BuildService
         // Note: This requires routes to be definable statically
         // If routes.php uses external variables, it might be complex.
         // We assume routes.php configures the Router singleton.
-        
+
         $router = Router::getInstance();
         // Load original routes (this might vary depending on how the user defines them)
         if ($routesPath === null) {
             $routesPath = $this->rootDir . DIRECTORY_SEPARATOR . 'routes.php';
         }
-        
+
         if (file_exists($routesPath)) {
             // We isolate the inclusion to not pollute the state
             (static function($router, $path) {
@@ -120,7 +120,7 @@ class BuildService
         if ($dirs === null) {
             $servicesDir = $this->rootDir . DIRECTORY_SEPARATOR . 'services';
             $dirs = [$servicesDir];
-            
+
             // Try to find Sophia core classes
             $sophiaCore = __DIR__; // This is current core dir
             if (is_dir($sophiaCore)) {
@@ -136,7 +136,7 @@ class BuildService
                 if (!class_exists($class)) continue;
                 $reflection = new ReflectionClass($class);
                 $attr = $reflection->getAttributes(Injectable::class)[0] ?? null;
-                
+
                 if ($attr && $attr->newInstance()->providedIn === 'root') {
                     $rootServices[] = $class;
                 }
@@ -154,7 +154,7 @@ class BuildService
         $classes = [];
         foreach ($dirs as $dir) {
             if (!is_dir($dir)) continue;
-            
+
             $files = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS)
             );
@@ -165,11 +165,15 @@ class BuildService
                     if (preg_match('/namespace\s+([^;]+);/i', $content, $m)) {
                         $namespace = trim($m[1]);
                     }
-                    
-                    if (preg_match('/(?:class|trait|interface)\s+(\w+)/i', $content, $m2)) {
+
+                    // Remove comments to avoid matching class names inside them
+                    $cleanContent = preg_replace('#/\*.*?\*/#s', '', $content);
+                    $cleanContent = preg_replace('#//.*$#m', '', $cleanContent);
+
+                    if (preg_match('/(?:class|trait|interface)\s+(\w+)/i', $cleanContent, $m2)) {
                         $className = $m2[1];
                         $fullClassName = $namespace ? $namespace . '\\' . $className : $className;
-                        
+
                         // Try to trigger autoloader if not already loaded
                         if (!class_exists($fullClassName, true)) {
                             // If it still doesn't exist, we might need to require it manually
@@ -180,7 +184,7 @@ class BuildService
                                 // Ignore include errors
                             }
                         }
-                        
+
                         if (class_exists($fullClassName, false) || class_exists($fullClassName, true)) {
                             $classes[] = $fullClassName;
                         }
@@ -208,7 +212,7 @@ class BuildService
             }
             return '[' . implode(', ', $parts) . ']';
         }
-        
+
         if ($data instanceof \Closure) {
             return 'function() { /* Closure not supported in build cache */ }';
         }
@@ -222,7 +226,7 @@ class BuildService
             }
             return 'new \\' . $class . '(' . implode(', ', $parts) . ')';
         }
-        
+
         return var_export($data, true);
     }
 
